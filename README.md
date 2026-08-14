@@ -283,6 +283,7 @@ For the full command reference (tests, lint/format, Rust checks, bumping the emb
 - [`ROADMAP.md`](./ROADMAP.md) — shipped, in-progress, and planned features
 - [`docs/adr/`](./docs/adr/) — architecture decision records
 - [`docs/DESIGN.md`](./docs/DESIGN.md) — design tokens and UI primitives
+- [`docs/CODE_SIGNING.md`](./docs/CODE_SIGNING.md) — one-time Apple Developer ID signing/notarization setup for release DMGs
 
 ---
 
