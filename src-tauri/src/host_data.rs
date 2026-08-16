@@ -271,14 +271,16 @@ fn message_with_entry_id(mut message: serde_json::Value, entry_id: &str) -> serd
 /// Parse a number from `git diff --shortstat` output for a given keyword.
 /// e.g. `parse_shortstat_num("3 files changed, 10 insertions(+)", "insertion")` → 10
 fn parse_shortstat_num(line: &str, keyword: &str) -> u32 {
-    line.split(',').find_map(|part| {
-        let part = part.trim();
-        if part.contains(keyword) {
-            part.split_whitespace().next().and_then(|n| n.parse().ok())
-        } else {
-            None
-        }
-    }).unwrap_or(0)
+    line.split(',')
+        .find_map(|part| {
+            let part = part.trim();
+            if part.contains(keyword) {
+                part.split_whitespace().next().and_then(|n| n.parse().ok())
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0)
 }
 
 fn classify_git_status(x: char, y: char) -> (&'static str, &'static str) {

@@ -823,7 +823,7 @@ fn setup_native_runtime(app: &mut tauri::App, static_dir: PathBuf) -> Result<(),
 }
 
 fn main() {
-    if let Err(error) = fix_path_env::fix() {
+    if let Err(error) = fix_path_env::fix_all_vars() {
         eprintln!("[picot] failed to sync PATH from login shell: {error}");
     }
 
