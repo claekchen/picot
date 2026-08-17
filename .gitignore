@@ -22,7 +22,6 @@ src-tauri/resources/pi/
 
 # Vendored font assets live under public/fonts/.
 # Use scripts/fetch-terminal-font.js and scripts/fetch-cjk-font.js to update them.
-public/fonts/cjk/
 
 # husky internal scripts (managed by `bun run prepare`)
 .husky/_/
