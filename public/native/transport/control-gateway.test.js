@@ -51,6 +51,86 @@ describe("HostControlGateway", () => {
     await expect(response).rejects.toThrow("npm is not installed");
   });
 
+  it("passes the local (project scope) flag on install/remove", async () => {
+    const adapter = createInMemoryRuntimeAdapter();
+    const control = new HostControlGateway(adapter);
+    const install = control.installPiPackage("npm:foo", { local: true });
+    const installFrame = adapter.takeSent();
+    expect(installFrame).toMatchObject({
+      operation: "install_pi_package",
+      source: "npm:foo",
+      local: true,
+    });
+    adapter.receive({ type: "host_response", requestId: installFrame.requestId, ok: true });
+    await expect(install).resolves.toBeUndefined();
+
+    const remove = control.removePiPackage("npm:foo", { local: true });
+    const removeFrame = adapter.takeSent();
+    expect(removeFrame).toMatchObject({
+      operation: "remove_pi_package",
+      source: "npm:foo",
+      local: true,
+    });
+    adapter.receive({ type: "host_response", requestId: removeFrame.requestId, ok: true });
+    await expect(remove).resolves.toBeUndefined();
+  });
+
+  it("sends the source for an update request", async () => {
+    const adapter = createInMemoryRuntimeAdapter();
+    const control = new HostControlGateway(adapter);
+    const response = control.updatePiPackage("npm:foo");
+    const sent = adapter.takeSent();
+    expect(sent).toMatchObject({
+      type: "host_request",
+      operation: "update_pi_package",
+      source: "npm:foo",
+    });
+    adapter.receive({ type: "host_response", requestId: sent.requestId, ok: true });
+    await expect(response).resolves.toBeUndefined();
+  });
+
+  it("reports whether a disable returned a change", async () => {
+    const adapter = createInMemoryRuntimeAdapter();
+    const control = new HostControlGateway(adapter);
+    const response = control.setPiPackageDisabled("npm:foo", "global", true, "/tmp");
+    const sent = adapter.takeSent();
+    expect(sent).toMatchObject({
+      type: "host_request",
+      operation: "set_pi_package_disabled",
+      source: "npm:foo",
+      scope: "global",
+      disabled: true,
+      cwd: "/tmp",
+    });
+    adapter.receive({
+      type: "host_response",
+      requestId: sent.requestId,
+      operation: "set_pi_package_disabled",
+      changed: true,
+    });
+    await expect(response).resolves.toBe(true);
+  });
+
+  it("returns the new instance id after a runtime restart", async () => {
+    const adapter = createInMemoryRuntimeAdapter();
+    const control = new HostControlGateway(adapter);
+    const response = control.restartRuntime("ws-1", "s-1");
+    const sent = adapter.takeSent();
+    expect(sent).toMatchObject({
+      type: "host_request",
+      operation: "restart_runtime",
+      workspaceId: "ws-1",
+      sessionId: "s-1",
+    });
+    adapter.receive({
+      type: "host_response",
+      requestId: sent.requestId,
+      operation: "restart_runtime",
+      instanceId: "instance-new",
+    });
+    await expect(response).resolves.toBe("instance-new");
+  });
+
   it("lists installed external apps", async () => {
     const adapter = createInMemoryRuntimeAdapter();
     const control = new HostControlGateway(adapter);

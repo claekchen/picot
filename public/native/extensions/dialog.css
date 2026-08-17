@@ -3,29 +3,18 @@
    ═══════════════════════════════════════════════════════ */
 
 #dialog-container {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   animation: fadeIn 0.15s;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
 }
 
 .dialog {
-  background: var(--bg-frosted);
-  backdrop-filter: blur(var(--blur-heavy)) saturate(1.5);
-  -webkit-backdrop-filter: blur(var(--blur-heavy)) saturate(1.5);
-  border: 1px solid var(--border-hover);
-  border-radius: var(--radius-lg);
   padding: var(--space-8);
   max-width: min(760px, 92vw);
   max-height: min(760px, 88vh);
   width: 90%;
-  box-shadow: var(--shadow-lg), var(--shadow-inset);
   animation: sheetIn 0.3s var(--ease);
   overflow: auto;
 }

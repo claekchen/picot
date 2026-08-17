@@ -8,13 +8,21 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-top: var(--messages-top-inset);
-  padding-bottom: var(--messages-bottom-inset);
+  padding-bottom: 0;
   padding-left: max(var(--space-6), calc((100% - 960px) / 2));
   padding-right: max(var(--space-6), calc((100% - 960px) / 2));
   display: flex;
   flex-direction: column;
   gap: var(--space-1-5);
   scroll-behavior: smooth;
+}
+
+/* WebKit does not reliably include end padding in a scrolling flex container's
+   overflow area. A real flex item keeps the floating composer inset scrollable. */
+.messages::after {
+  content: "";
+  flex-basis: calc(var(--messages-bottom-inset) - var(--space-1-5));
+  flex-shrink: 0;
 }
 
 .messages::-webkit-scrollbar {

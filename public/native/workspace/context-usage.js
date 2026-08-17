@@ -18,6 +18,7 @@ export function setupContextUsage({
   let contextWindowSize = 0;
   let compacting = false;
   let working = false;
+  let sessionTokens = { input: 0, output: 0 };
 
   const viz = setupContextViz({
     tokenUsageEl,
@@ -28,6 +29,7 @@ export function setupContextUsage({
     contextVizTotal,
     getUsage: () => usage,
     getContextWindowSize: () => contextWindowSize,
+    getSessionTotals: () => sessionTokens,
   });
 
   function setUsage(nextUsage, nextContextWindowSize = contextWindowSize) {
@@ -43,9 +45,19 @@ export function setupContextUsage({
     if (!contextViz?.classList.contains("hidden")) viz.update();
   }
 
+  function setSessionTotals(next = {}) {
+    sessionTokens = {
+      input: Number(next.input) || 0,
+      output: Number(next.output) || 0,
+    };
+    renderPill();
+    if (!contextViz?.classList.contains("hidden")) viz.update();
+  }
+
   function clear() {
     usage = null;
     contextWindowSize = 0;
+    sessionTokens = { input: 0, output: 0 };
     tokenUsageEl?.classList.remove("visible", "warning", "critical");
     if (tokenUsageEl) {
       tokenUsageEl.textContent = "";
@@ -71,10 +83,28 @@ export function setupContextUsage({
   function renderPill() {
     renderCompactButton();
     if (!tokenUsageEl) return;
-    const used = usageTotal(usage);
     tokenUsageEl.classList.remove("warning", "critical");
 
-    if (used <= 0) {
+    const used = usageTotal(usage);
+    const parts = [];
+    if (sessionTokens.input > 0) {
+      parts.push(t("usage.inputSummary", { in: formatTokens(sessionTokens.input) }));
+    }
+    if (sessionTokens.output > 0) {
+      parts.push(t("usage.outputSummary", { out: formatTokens(sessionTokens.output) }));
+    }
+
+    let percent = null;
+    if (used > 0 && contextWindowSize > 0) {
+      percent = Math.round((used / contextWindowSize) * 100);
+      parts.push(`${percent}%`);
+      if (percent >= 80) tokenUsageEl.classList.add("critical");
+      else if (percent >= 60) tokenUsageEl.classList.add("warning");
+    } else if (used > 0) {
+      parts.push(formatTokens(used));
+    }
+
+    if (parts.length === 0) {
       tokenUsageEl.classList.remove("visible");
       tokenUsageEl.textContent = "";
       tokenUsageEl.title = t("usage.contextTitle");
@@ -83,20 +113,24 @@ export function setupContextUsage({
     }
 
     tokenUsageEl.classList.add("visible");
-    if (contextWindowSize > 0) {
-      const percent = Math.round((used / contextWindowSize) * 100);
-      tokenUsageEl.textContent = `${percent}%`;
-      tokenUsageEl.title = `Context: ${formatTokens(used)} / ${formatTokens(contextWindowSize)} tokens`;
-      if (percent >= 80) {
-        tokenUsageEl.classList.add("critical");
-      } else if (percent >= 60) {
-        tokenUsageEl.classList.add("warning");
-      }
-      return;
-    }
+    tokenUsageEl.textContent = parts.join(" · ");
+    tokenUsageEl.title = pillTitle(used);
+  }
 
-    tokenUsageEl.textContent = formatTokens(used);
-    tokenUsageEl.title = `Context: ${formatTokens(used)} tokens`;
+  function pillTitle(used) {
+    const details = [];
+    if (sessionTokens.input > 0) {
+      details.push(t("usage.inputSummary", { in: formatTokens(sessionTokens.input) }));
+    }
+    if (sessionTokens.output > 0) {
+      details.push(t("usage.outputSummary", { out: formatTokens(sessionTokens.output) }));
+    }
+    if (used > 0 && contextWindowSize > 0) {
+      details.push(`Context: ${formatTokens(used)} / ${formatTokens(contextWindowSize)} tokens`);
+    } else if (used > 0) {
+      details.push(`Context: ${formatTokens(used)} tokens`);
+    }
+    return details.length > 0 ? details.join(" · ") : t("usage.contextTitle");
   }
 
   return {
@@ -113,6 +147,7 @@ export function setupContextUsage({
       renderCompactButton();
     },
     setContextWindowSize,
+    setSessionTotals,
     setUsage,
     get usage() {
       return usage;

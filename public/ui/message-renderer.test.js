@@ -220,6 +220,28 @@ describe("MessageRenderer streaming markdown preview", () => {
       globalThis.requestAnimationFrame = originalRequestAnimationFrame;
     }
   });
+
+  it("stops auto-scrolling when the user scrolls up within the old near-bottom threshold", () => {
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = (callback) => {
+      callback();
+      return 0;
+    };
+    Object.defineProperties(container, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 650 },
+    });
+    container.scrollTop = 0;
+
+    try {
+      container.dispatchEvent(new Event("scroll"));
+      renderer.scrollToBottom();
+
+      expect(container.scrollTop).toBe(0);
+    } finally {
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    }
+  });
 });
 
 describe("MessageRenderer locale change", () => {

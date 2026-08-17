@@ -4,6 +4,9 @@
  * data request scoped to the current workspace root; there is no absolute
  * filesystem path to escape to.
  */
+import { createFileTypeIcon } from "../../file-type-icons.js";
+import { t } from "../../i18n.js";
+
 export class NativeFileBrowser {
   #container;
   #pathEl;
@@ -12,6 +15,7 @@ export class NativeFileBrowser {
   #requestId = 0;
   #onFileOpen;
   #onFileSelect;
+  #onMention;
   #onPathChange;
   #gitFiles = [];
   #gitStat = null;
@@ -28,6 +32,7 @@ export class NativeFileBrowser {
    * @param {{
    *   onFileOpen?: (entry: object) => void,
    *   onFileSelect?: (entry: object) => void,
+   *   onMention?: (entry: object) => void,
    *   onPathChange?: (path: string) => void,
    * }} [options]
    */
@@ -36,7 +41,14 @@ export class NativeFileBrowser {
     pathEl,
     gateway,
     workspaceId,
-    { onFileOpen, onFileSelect, onPathChange, initialView = "files", showViewSwitch = true } = {},
+    {
+      onFileOpen,
+      onFileSelect,
+      onMention,
+      onPathChange,
+      initialView = "files",
+      showViewSwitch = true,
+    } = {},
   ) {
     this.#container = container;
     this.#pathEl = pathEl;
@@ -44,6 +56,7 @@ export class NativeFileBrowser {
     this.#workspaceId = workspaceId;
     this.#onFileOpen = onFileOpen ?? null;
     this.#onFileSelect = onFileSelect ?? null;
+    this.#onMention = onMention ?? null;
     this.#onPathChange = onPathChange ?? null;
     this.#view = initialView === "diff" ? "diff" : "files";
     this.#showViewSwitch = showViewSwitch;
@@ -73,7 +86,7 @@ export class NativeFileBrowser {
       this.#render();
     } catch (error) {
       if (requestId !== this.#requestId) return;
-      this.#container.replaceChildren(messageRow(error?.message || "Failed to load"));
+      this.#container.replaceChildren(messageRow(error?.message || t("files.failedLoad")));
     }
   }
 
@@ -92,7 +105,7 @@ export class NativeFileBrowser {
       return;
     }
     if (this.#entries.length === 0) {
-      this.#container.append(messageRow("Empty directory"));
+      this.#container.append(messageRow(t("files.empty")));
       return;
     }
     for (const entry of this.#entries) {
@@ -105,8 +118,14 @@ export class NativeFileBrowser {
 
       const icon = document.createElement("span");
       icon.className = "file-icon";
-      icon.textContent = fileIcon(entry);
       icon.setAttribute("aria-hidden", "true");
+      icon.append(
+        createFileTypeIcon({
+          name: entry.name,
+          isDirectory,
+          expanded: isDirectory,
+        }),
+      );
       item.append(icon);
 
       const name = document.createElement("span");
@@ -122,6 +141,20 @@ export class NativeFileBrowser {
         item.append(size);
       }
 
+      if (this.#onMention) {
+        const mention = document.createElement("button");
+        mention.type = "button";
+        mention.className = "file-mention-btn";
+        mention.title = `@mention ${entry.name}`;
+        mention.textContent = "@";
+        mention.setAttribute("aria-label", `Mention ${entry.name}`);
+        mention.addEventListener("click", (event) => {
+          event.stopPropagation();
+          this.#onMention?.({ ...entry, isDirectory });
+        });
+        item.append(mention);
+      }
+
       if (isDirectory) {
         item.addEventListener("click", () => this.load(entry.relativePath));
       } else {
@@ -135,14 +168,15 @@ export class NativeFileBrowser {
   #renderViewSwitch() {
     const switcher = document.createElement("div");
     switcher.className = "file-browser-view-switch ui-toolbar";
-    for (const [view, label] of [
-      ["files", "Files"],
-      ["diff", "Diff"],
+    for (const [view, labelKey] of [
+      ["files", "nav.files"],
+      ["diff", "files.preview.diff"],
     ]) {
       const button = document.createElement("button");
       button.type = "button";
+      button.dataset.view = view;
       button.className = `ui-button ui-button--sm ui-button--ghost${this.#view === view ? " active" : ""}`;
-      button.textContent = label;
+      button.textContent = t(labelKey);
       button.setAttribute("aria-pressed", String(this.#view === view));
       button.addEventListener("click", () => {
         this.#view = view;
@@ -178,7 +212,7 @@ export class NativeFileBrowser {
 
   #renderChanges() {
     if (this.#gitFiles.length === 0) {
-      this.#container.append(messageRow("No changes"));
+      this.#container.append(messageRow(t("files.noChanges")));
       return;
     }
     const section = document.createElement("section");
@@ -186,11 +220,12 @@ export class NativeFileBrowser {
     const heading = document.createElement("div");
     heading.className = "file-changes-heading";
     const label = document.createElement("span");
-    label.textContent = "Changes";
+    label.textContent = t("git.changesHeading");
     const count = document.createElement("span");
     count.className = "ui-badge file-changes-count";
     count.textContent = String(this.#gitFiles.length);
-    heading.append(label, count);
+    label.append(count);
+    heading.append(label);
     if (this.#gitStat?.isGitRepository) {
       const stat = document.createElement("span");
       stat.className = "file-changes-stat";
@@ -237,108 +272,7 @@ export class NativeFileBrowser {
   }
 }
 
-export function toggleExclusiveSidePanel(panel, otherPanels = []) {
-  const willOpen = panel.classList.contains("collapsed");
-  if (willOpen) {
-    for (const other of otherPanels) other?.classList.add("collapsed");
-  }
-  panel.classList.toggle("collapsed", !willOpen);
-  return willOpen;
-}
-
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-/** Return an emoji glyph for the file entry based on its type / extension. */
-function fileIcon(entry) {
-  if (entry.kind === "directory") return "📁";
-
-  // Special filenames
-  if (entry.name === "Dockerfile" || entry.name.startsWith("Dockerfile.")) return "🐳";
-  if (entry.name === ".gitignore" || entry.name === ".gitattributes") return "🔧";
-
-  const ext = entry.name.split(".").pop()?.toLowerCase() ?? "";
-  const map = {
-    // Code
-    js: "📜",
-    ts: "📜",
-    jsx: "📜",
-    tsx: "📜",
-    mjs: "📜",
-    cjs: "📜",
-    // Data / config
-    json: "📋",
-    yaml: "📋",
-    yml: "📋",
-    toml: "📋",
-    xml: "📋",
-    csv: "📋",
-    // Docs
-    md: "📝",
-    mdx: "📝",
-    txt: "📝",
-    rst: "📝",
-    // Styles
-    css: "🎨",
-    scss: "🎨",
-    sass: "🎨",
-    less: "🎨",
-    // Web
-    html: "🌐",
-    htm: "🌐",
-    // Images (svg stays 🌐 here because it's usually source, not binary)
-    svg: "🌐",
-    png: "🖼️",
-    jpg: "🖼️",
-    jpeg: "🖼️",
-    gif: "🖼️",
-    webp: "🖼️",
-    ico: "🖼️",
-    bmp: "🖼️",
-    // Video
-    mp4: "🎬",
-    mov: "🎬",
-    avi: "🎬",
-    webm: "🎬",
-    mkv: "🎬",
-    // Audio
-    mp3: "🎵",
-    wav: "🎵",
-    ogg: "🎵",
-    flac: "🎵",
-    aac: "🎵",
-    // Archives
-    zip: "📦",
-    tar: "📦",
-    gz: "📦",
-    bz2: "📦",
-    rar: "📦",
-    "7z": "📦",
-    // Docs / binary
-    pdf: "📕",
-    // Languages
-    rs: "🦀",
-    py: "🐍",
-    rb: "💎",
-    go: "🔵",
-    java: "☕",
-    kt: "🟣",
-    swift: "🔶",
-    c: "⚙️",
-    cpp: "⚙️",
-    h: "⚙️",
-    hpp: "⚙️",
-    // Shell
-    sh: "⚡",
-    bash: "⚡",
-    zsh: "⚡",
-    fish: "⚡",
-    ps1: "⚡",
-    // Lock / env
-    lock: "🔒",
-    env: "🔑",
-  };
-  return map[ext] ?? "📄";
-}
 
 /** Human-readable byte size (B / KB / MB / GB). */
 function formatSize(bytes) {

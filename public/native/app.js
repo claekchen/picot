@@ -1,6 +1,8 @@
+import { createCompactCoordinator } from "../compact-coordinator.js";
 import { FilePreviewPanel } from "../file-preview-panel.js";
 import { initI18n, onLocaleChange, t } from "../i18n.js";
 import { reconcileSnapshotTarget } from "../session/bootstrap-target.js";
+import { SessionUiStateStore } from "../session-ui-state.js";
 import { dispatchSuperAgentTaskNative } from "../super-agent/native-dispatch.js";
 import { isSuperAgentProjectPath } from "../super-agent/session.js";
 import { isSuperAgentEnabled } from "../super-agent/settings.js";
@@ -8,11 +10,16 @@ import { selectSuperAgentStartupAction } from "../super-agent/startup-flow.js";
 import { buildTaskComposerPrompt, markTaskChildSessionBound } from "../super-agent/task-state.js";
 import { updateSuperAgentTask } from "../super-agent/task-store.js";
 import { applyTheme, getCurrentTheme } from "../themes.js";
-import { setupAtFileMention } from "../ui/at-file-mention.js";
+import { buildAtMentionValue, setupAtFileMention } from "../ui/at-file-mention.js";
 import { ConvNav } from "../ui/conv-nav.js";
+import { createHeaderStatusBar } from "../ui/header-status-bar.js";
 import { setupMessagesInsets } from "../ui/layout-insets.js";
 import { MessageRenderer } from "../ui/message-renderer.js";
-import { createProcessDetailsGroup, summarizeProcessGroup } from "../ui/process-group.js";
+import {
+  captureExpandedProcessGroups,
+  createProcessDetailsGroup,
+  summarizeProcessGroup,
+} from "../ui/process-group.js";
 import { setupResizablePanel } from "../ui/resizable-panel.js";
 import { ToolCardRenderer } from "../ui/tool-card.js";
 import { setupComposerAutoResize } from "./composer/composer-autoresize.js";
@@ -26,6 +33,7 @@ import { showNativeDialog } from "./extensions/dialog.js";
 import { ExtensionUiHost } from "./extensions/extension-ui-host.js";
 import { showInlineExtensionPrompt } from "./extensions/inline-extension-prompt.js";
 import { setupAppUpdater } from "./features/app-updater.js";
+import { setupGitPanel } from "./features/git-panel-integration.js";
 import { refreshLanQrButton, setupLanQr } from "./features/lan-qr.js";
 import { resolveRemoteAuth } from "./features/remote-auth.js";
 import {
@@ -35,7 +43,10 @@ import {
 } from "./features/rpiv-todo-mirror.js";
 import { setupTerminalPanel } from "./features/terminal-panel-integration.js";
 import { createNotificationCenter } from "./notifications/notification-center.js";
-import { createTaskCompletionNotifications } from "./notifications/task-completion-notifications.js";
+import {
+  createNativeTaskNotificationSender,
+  createTaskCompletionNotifications,
+} from "./notifications/task-completion-notifications.js";
 import { setupSessionInfo } from "./session/session-info.js";
 import { createSessionSelectionHandler } from "./session/session-navigation.js";
 import { setupSessionSearchDialog } from "./session/session-search-dialog.js";
@@ -43,7 +54,7 @@ import { SessionSidebar } from "./session/session-sidebar.js";
 import { createSessionStore, reduceSessionState } from "./session/session-store.js";
 import { setupSettingsPanel } from "./settings/settings-panel.js";
 import { resolveBootstrapTarget } from "./transport/bootstrap-target.js";
-import { ConfigGateway } from "./transport/config-gateway.js";
+import { ConfigGateway, consumeConfigResponseFrame } from "./transport/config-gateway.js";
 import {
   setupConfigGatewayConnectionListener,
   signalConfigGatewayReady,
@@ -51,14 +62,17 @@ import {
 import { HostControlGateway } from "./transport/control-gateway.js";
 import { HostDataGateway } from "./transport/data-gateway.js";
 import { HostRuntimeAdapter, resolveHostWebSocketUrl } from "./transport/runtime-adapter.js";
+import { routeRuntimeFrame } from "./transport/runtime-frame-routing.js";
 import { RuntimeGateway } from "./transport/runtime-gateway.js";
 import { setupAppKeyboardShortcuts } from "./utils/keyboard-shortcuts.js";
 import { randomId } from "./utils/random-id.js";
 import { appRoutePath, parseAppRoute, replaceTemporarySessionRoute } from "./utils/router.js";
 import { findLatestAssistantUsage, setupContextUsage } from "./workspace/context-usage.js";
-import { NativeFileBrowser, toggleExclusiveSidePanel } from "./workspace/file-browser.js";
+import { toggleExclusiveSidePanel } from "./workspace/exclusive-side-panel.js";
+import { NativeFileBrowser } from "./workspace/file-browser.js";
 import { setupHeaderOpenApp } from "./workspace/header-open-app.js";
 import { setupProjectHeader } from "./workspace/project-header.js";
+import { createSessionStatus } from "./workspace/session-status.js";
 import {
   createSessionViaHost,
   openSessionInProjectViaHost,
@@ -75,6 +89,10 @@ import {
 // TDZ and cause "Cannot access 'snapshotInFlight' before initialization" when
 // the handler fires before module evaluation reaches the `let` line.
 let snapshotInFlight = false;
+// Status lives in its own module so hooks can fire while this file is paused
+// on a later `await` without hitting TDZ on `let statusKind`.
+const sessionStatus = createSessionStatus({ t });
+const { applyHostStatus, renderStatus, setStatus } = sessionStatus;
 const route = parseAppRoute(window.location.pathname);
 if (route.name !== "session") throw new Error("Native Picot requires a session route");
 
@@ -91,9 +109,19 @@ const convNav = new ConvNav({
   badgeEl: scrollBottomBadge,
 });
 const notifications = createNotificationCenter();
+const sendNativeTaskNotification = createNativeTaskNotificationSender({
+  invoke: globalThis.__TAURI__?.core?.invoke,
+});
 const taskCompletionNotifications = createTaskCompletionNotifications({
-  title: () => t("settings.taskCompleteTitle"),
+  resolveTask: (notificationTarget) =>
+    sidebar?.sessions?.find(
+      (session) =>
+        session.id === notificationTarget?.sessionId &&
+        session.workspaceId === notificationTarget?.workspaceId,
+    ) ?? null,
+  title: (task) => task?.name || task?.firstMessage || t("settings.taskCompleteTitle"),
   body: () => t("settings.taskCompleteMessage"),
+  showNotification: sendNativeTaskNotification,
 });
 
 setupMessagesInsets({
@@ -121,6 +149,7 @@ const imageInput = document.getElementById("image-input");
 const imagePreviews = document.getElementById("image-previews");
 const skillSlashMenu = document.getElementById("skill-slash-menu");
 const atFileMentionMenu = document.getElementById("at-file-mention-menu");
+let atFileMention = null;
 const composerAutoResize = setupComposerAutoResize({ input });
 const queuedMessages = document.getElementById("queued-messages");
 const todoMirrorPanel = new RpivTodoMirrorPanel({
@@ -134,7 +163,6 @@ const modelDropdownLabel = document.getElementById("model-dropdown-label");
 const modelDropdownMenu = document.getElementById("model-dropdown-menu");
 const modelDropdownToolbar = modelDropdown?.closest(".composer-toolbar");
 const thinkingBtn = document.getElementById("thinking-btn");
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high"];
 
 function formatThinkingLevelLabel(level) {
   const normalizedLevel = level || "off";
@@ -144,6 +172,62 @@ function formatThinkingLevelLabel(level) {
 }
 let currentThinkingLevel = "off";
 let currentModelId = null;
+
+// Session UI state: persists per-session model + thinking level and input draft
+// so switching between sessions restores the composer state. Profiles live in
+// the native host (SessionUiProfileStore) keyed by the runtime session id;
+// drafts stay window-memory because they are not worth serialising.
+const sessionUiState = new SessionUiStateStore({
+  profileClient: {
+    load: () => {
+      const sessionId = target.sessionId;
+      if (!sessionId || sessionId === "pending-bootstrap") return Promise.resolve(null);
+      return runtime.sendHostRequest
+        ? runtime
+            .sendHostRequest({
+              operation: "session_ui_profile_load",
+              expectedSessionId: sessionId,
+            })
+            .then((response) => response?.profile ?? null)
+        : fetch("/v2/host", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              operation: "session_ui_profile_load",
+              expectedSessionId: sessionId,
+            }),
+          })
+            .then(async (response) => {
+              if (!response.ok) return null;
+              const data = await response.json();
+              return data?.profile ?? null;
+            })
+            .catch(() => null);
+    },
+    save: (profile) => {
+      const sessionId = target.sessionId;
+      if (!sessionId || sessionId === "pending-bootstrap") return Promise.resolve(null);
+      const payload = {
+        operation: "session_ui_profile_save",
+        expectedSessionId: sessionId,
+        ...profile,
+      };
+      return runtime.sendHostRequest
+        ? runtime.sendHostRequest(payload).then((response) => response?.profile ?? profile)
+        : fetch("/v2/host", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload),
+          })
+            .then(async (response) => {
+              if (!response.ok) return profile;
+              const data = await response.json();
+              return data?.profile ?? profile;
+            })
+            .catch(() => profile);
+    },
+  },
+});
 let currentModelContextWindow = 0;
 let availableModels = [];
 let target = provisionalTargetFromRoute(route);
@@ -156,7 +240,13 @@ let store = createSessionStore(target);
 let navigationGeneration = 0;
 let commandCatalog = buildCommandCatalog({});
 let streamingElement = null;
+let liveProcessGroup = null;
 let sidebar = null;
+let agentInboxNavSelectSession = null;
+// Sidebar loading starts before bootstrap/runtime awaits complete. Keep every
+// state slot used by its callbacks initialized above that startup boundary so
+// a fast session-list response cannot hit a temporal dead zone.
+let agentInboxNavSession = null;
 const sessionInfo = setupSessionInfo({
   toggle: document.getElementById("session-info-toggle"),
   panel: document.getElementById("session-info-panel"),
@@ -189,6 +279,7 @@ function markSuperAgentLaunched() {
 }
 let pendingBoundSessionFirstMessage = null;
 let superAgentEnsureInFlight = null;
+let diskHistoryFallback = null;
 
 // Maps a dispatched child runtime instanceId -> Agent Inbox task id, so
 // `session_bound` events from the background child can upgrade the task's
@@ -214,7 +305,6 @@ const adapter = new HostRuntimeAdapter({
 setupTerminalPanel({
   adapter,
   getWorkspaceId: () => target.workspaceId,
-  native: remoteAuth.clientType === "desktop",
 });
 const runtime = new RuntimeGateway(adapter);
 const data = new HostDataGateway(adapter, { fetchImpl: window.fetch.bind(window) });
@@ -228,8 +318,83 @@ window.__picotConfigCall = (op, params, options) => config.call(op, params, opti
 const contextUsage = setupContextUsage();
 const compactContextButton = document.getElementById("compact-context-btn");
 const filePreviewPanel = setupFilePreviewPanel();
+const gitPanel = setupGitPanel({
+  runtime,
+  getTarget: () => target,
+  container: document.getElementById("git-panel"),
+  fileSidebar: document.getElementById("file-sidebar"),
+  fileList: document.getElementById("file-list"),
+  filePreviewPanel,
+  onError: showError,
+});
+
+// Owned by setupFileBrowser() once the sidebar DOM is ready. Kept at module
+// scope so openFilesPanel() can refresh it after expanding the sidebar.
+let fileBrowser = null;
+
+/**
+ * Expand the file sidebar, switch to the Files tab, and (when newly opened)
+ * load the workspace root. Wired to #file-sidebar-toggle and Cmd/Ctrl+B.
+ */
+function openFilesPanel() {
+  const sidebar = document.getElementById("file-sidebar");
+  if (!sidebar) return;
+  const opened = toggleExclusiveSidePanel(sidebar, [document.getElementById("diff-sidebar")]);
+  gitPanel?.setTab("files");
+  if (opened && fileBrowser?.currentPath === null) fileBrowser.load().catch(showError);
+}
+
 const sessionCostEl = document.getElementById("session-cost");
+
+// Header status bar: aggregates session token/cost totals from session
+// stats + live completions. Token in/out render on the combined
+// token-usage pill; this bar only owns cost and publishes totals.
+let headerStatusBar = null;
+if (sessionCostEl) {
+  headerStatusBar = createHeaderStatusBar({
+    sessionCostEl,
+    t,
+    onTotalsChange: (totals) => contextUsage.setSessionTotals(totals),
+  });
+}
+
 let sessionTotalCost = 0;
+
+// Hydrate the header status bar from authoritative get_session_stats.
+// The aggregate (output/cost) comes only from the server's tally, not
+// from client-side message walking — repeated mirror syncs and history
+// replay would otherwise inflate the totals.
+let statsHydrationGeneration = 0;
+function activeSessionFileForStatusBar() {
+  const sessions = sidebar?.sessions ?? [];
+  return (
+    sessions.find((s) => s.id === target.sessionId)?.filePath ??
+    sessions.find((s) => s.projectPath === store.cwd)?.filePath ??
+    null
+  );
+}
+async function hydrateHeaderSessionStats() {
+  if (!headerStatusBar) return;
+  const generation = ++statsHydrationGeneration;
+  try {
+    const frame = await runtime.request({ type: "get_session_stats" }, target);
+    // runtime.request resolves with the full runtime_response frame; the pi
+    // result lives in frame.response.
+    const result = frame?.response ?? frame;
+    if (!result?.success || !result?.data) return;
+    if (generation !== statsHydrationGeneration) return;
+    if (!result.data.sessionFile) return;
+    const activeSessionFile = activeSessionFileForStatusBar();
+    if (activeSessionFile && result.data.sessionFile !== activeSessionFile) return;
+    headerStatusBar.hydrateSessionStats({
+      sessionFile: result.data.sessionFile,
+      tokens: result.data.tokens,
+      cost: result.data.cost,
+    });
+  } catch {
+    // Aggregate hydration is best-effort; the current-context path still works.
+  }
+}
 
 function computeTotalCostFromMessages(messages) {
   if (!Array.isArray(messages)) return 0;
@@ -253,20 +418,34 @@ function setSessionCost(cost) {
   sessionCostEl.title = `Session cost: $${cost.toFixed(6)}`;
 }
 
+// Compact coordinator: a single state machine that distinguishes the RPC
+// acknowledgement from Pi's actual compaction_start/compaction_end lifecycle
+// events. This prevents duplicate requests and ensures the UI only returns to
+// idle when compaction truly completes (or fails).
+const compactCoordinator = createCompactCoordinator({
+  send: async () => {
+    const frame = await runtime.request({ type: "compact" }, target, {
+      idempotencyKey: randomId(),
+    });
+    // runtime.request resolves with the full runtime_response frame; the pi
+    // compact result lives in frame.response. Extract it so the coordinator
+    // sees { success, data } rather than the transport envelope.
+    return frame?.response ?? { success: false };
+  },
+  onState: (state) => {
+    contextUsage.setCompacting(state === "requested" || state === "running");
+  },
+});
+
 async function requestManualCompaction() {
   if (
     !contextUsage.canCompact ||
     store.lifecycle === "working" ||
-    store.compaction?.status === "running"
+    store.compaction?.status === "running" ||
+    compactCoordinator.busy
   )
     return;
-  contextUsage.setCompacting(true);
-  try {
-    await runtime.request({ type: "compact" }, target, { idempotencyKey: randomId() });
-  } catch (error) {
-    contextUsage.setCompacting(false);
-    throw error;
-  }
+  await compactCoordinator.request();
 }
 
 compactContextButton?.addEventListener("click", () => requestManualCompaction().catch(showError));
@@ -289,7 +468,7 @@ const extensionUi = new ExtensionUiHost({
       }
       messageRenderer.renderSystemMessage(request.message || "");
     },
-    status: (request) => setStatus(request.statusText || "Connected"),
+    status: (request) => applyHostStatus(request.statusText),
     title: (request) => {
       if (request.title) document.title = request.title;
     },
@@ -305,44 +484,168 @@ const extensionUi = new ExtensionUiHost({
     },
   },
 });
+sessionStatus.bind({
+  abortButton,
+  composerCard,
+  getSessionId: () => target.sessionId,
+  hasPending: (sessionId) => extensionUi.hasPending(sessionId),
+  sendButton,
+  statusIndicator,
+  statusText,
+});
 await extensionUi.setForegroundSession(target.sessionId, { flush: false });
 await extensionUi.flushForegroundQueue();
 
+function summarizeMessageRoles(messages) {
+  const counts = {};
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const role = message?.role || "unknown";
+    counts[role] = (counts[role] || 0) + 1;
+  }
+  return counts;
+}
+
+function summarizeElementBox(element) {
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  const style = getComputedStyle(element);
+  return {
+    tag: element.tagName?.toLowerCase() ?? null,
+    id: element.id || null,
+    className: String(element.className || ""),
+    display: style.display,
+    visibility: style.visibility,
+    opacity: style.opacity,
+    position: style.position,
+    zIndex: style.zIndex,
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+    top: Math.round(rect.top),
+    left: Math.round(rect.left),
+  };
+}
+
+function summarizeMessagesDom() {
+  if (!messagesElement) return null;
+  const style = getComputedStyle(messagesElement);
+  const rect = messagesElement.getBoundingClientRect();
+  const firstChildren = Array.from(messagesElement.children)
+    .slice(0, 5)
+    .map((child) => ({
+      className: String(child.className || ""),
+      textLength: child.textContent?.trim().length ?? 0,
+      textPreview: (child.textContent || "").trim().slice(0, 80),
+      box: summarizeElementBox(child),
+    }));
+  const centerX = Math.round(rect.left + rect.width / 2);
+  const centerY = Math.round(rect.top + Math.min(rect.height / 2, 160));
+  const elementAtCenter = document.elementFromPoint(centerX, centerY);
+  return {
+    bodyClass: document.body.className || null,
+    bodyRuntime: document.body.dataset.runtime || null,
+    url: window.location.href,
+    messages: summarizeElementBox(messagesElement),
+    main: summarizeElementBox(document.querySelector(".main")),
+    workspaceContent: summarizeElementBox(document.querySelector(".workspace-content")),
+    inputArea: summarizeElementBox(document.querySelector(".input-area")),
+    superAgentRuntime: summarizeElementBox(document.querySelector("super-agent-runtime")),
+    childCount: messagesElement.children.length,
+    firstChildClass: messagesElement.firstElementChild?.className ?? null,
+    userCount: messagesElement.querySelectorAll(".message.user, .user").length,
+    assistantCount: messagesElement.querySelectorAll(".message.assistant, .assistant").length,
+    toolCardCount: messagesElement.querySelectorAll(".tool-card").length,
+    processGroupCount: messagesElement.querySelectorAll(".process-details").length,
+    hasWelcome: Boolean(messagesElement.querySelector(".welcome")),
+    scrollTop: Math.round(messagesElement.scrollTop),
+    scrollHeight: messagesElement.scrollHeight,
+    clientHeight: messagesElement.clientHeight,
+    display: style.display,
+    visibility: style.visibility,
+    opacity: style.opacity,
+    overflowY: style.overflowY,
+    elementAtCenter: summarizeElementBox(elementAtCenter),
+    firstChildren,
+  };
+}
+
+function logMessagesDom(label, extra = {}) {
+  console.info(`[SESSION-LOAD] ${label}`, extra);
+  console.info(`[SESSION-LOAD] ${label} dom-json`, JSON.stringify(summarizeMessagesDom()));
+}
+
+function chooseHydrationMessages(snapshotMessages, reason) {
+  const messages = Array.isArray(snapshotMessages) ? snapshotMessages : [];
+  const fallbackMatches = diskHistoryFallback?.sessionId === target.sessionId;
+  const fallbackCount = fallbackMatches ? diskHistoryFallback.messages.length : 0;
+  const source = fallbackMatches && messages.length < fallbackCount ? "disk-fallback" : "snapshot";
+  console.info("[SESSION-LOAD] hydrate message source", {
+    reason,
+    currentSessionId: target.sessionId,
+    snapshotCount: messages.length,
+    snapshotRoles: summarizeMessageRoles(messages),
+    fallbackSessionId: diskHistoryFallback?.sessionId ?? null,
+    fallbackCount,
+    fallbackMatches,
+    source,
+  });
+  return source === "disk-fallback" ? diskHistoryFallback.messages : messages;
+}
+
 const hydrateFromSnapshot = async (snapshot) => {
+  console.info("[SESSION-LOAD] hydrate snapshot received", {
+    currentSessionId: target.sessionId,
+    snapshotTarget: snapshot?.target ?? null,
+    snapshotCount: Array.isArray(snapshot?.state?.messages) ? snapshot.state.messages.length : null,
+  });
   await adoptTarget(reconcileSnapshotTarget(target, snapshot.target));
   store = reduceSessionState(store, snapshot);
-  renderHistory(snapshot.state.messages ?? []);
-  todoMirrorPanel.hydrateFromMessages(snapshot.state.messages ?? []);
+  const messages = chooseHydrationMessages(snapshot.state.messages, "snapshot");
+  renderHistory(messages);
+  todoMirrorPanel.hydrateFromMessages(messages);
   renderQueuedMessages(queuedMessages, store.queue);
   convNav.rebuild();
   const pi = snapshot.state.pi ?? {};
-  setStatus(pi.isStreaming ? "Working…" : "Connected");
+  setStatus(pi.isStreaming ? "working" : "connected");
   contextUsage.setWorking(Boolean(pi.isStreaming));
+  if (pi.isStreaming) showLiveProcessIndicator();
   contextUsage.setCompacting(snapshot.state.compaction?.status === "running");
   updateComposerModel(pi.model ?? null);
   updateComposerThinking(pi.thinkingLevel ?? "off");
-  contextUsage.setUsage(
-    findLatestAssistantUsage(snapshot.state.messages),
-    currentModelContextWindow,
-  );
-  setSessionCost(computeTotalCostFromMessages(snapshot.state.messages ?? []));
+  contextUsage.setUsage(findLatestAssistantUsage(messages), currentModelContextWindow);
+  setSessionCost(computeTotalCostFromMessages(messages));
+  // Hydrate header status bar from authoritative get_session_stats
+  hydrateHeaderSessionStats();
   // Flush queued extension prompts after rendering is settled so inline cards
   // are not immediately destroyed by a subsequent renderHistory() clear.
   await extensionUi.flushForegroundQueue();
+  logMessagesDom("hydrate snapshot rendered", {
+    sessionId: target.sessionId,
+    renderedCount: messages.length,
+  });
+  requestAnimationFrame(() => {
+    logMessagesDom("hydrate snapshot rendered after frame", {
+      sessionId: target.sessionId,
+      renderedCount: messages.length,
+    });
+  });
 };
 
 runtime.subscribe((frame) => {
   if (frame.type !== "runtime_event") return;
   taskCompletionNotifications.handleRuntimeFrame(frame);
-  if (
-    frame.target.instanceId !== target.instanceId ||
-    (frame.target.sessionId && frame.target.sessionId !== target.sessionId)
-  ) {
-    handleBackgroundRuntimeEvent(frame).catch(showError);
+  const previous = store;
+  const routed = routeRuntimeFrame({
+    frame,
+    target,
+    store,
+    consumeConfigResponse: (candidate) => consumeConfigResponseFrame(config, candidate),
+    reduceForeground: reduceSessionState,
+  });
+  if (routed.kind === "background" || routed.kind === "consumed-background") {
+    if (routed.kind === "background") handleBackgroundRuntimeEvent(frame).catch(showError);
     return;
   }
-  const previous = store;
-  store = reduceSessionState(store, frame);
+  store = routed.store;
   if (!previous.snapshotRequired && store.snapshotRequired) {
     // Use hydrateSnapshotOnce to deduplicate concurrent calls (e.g. when the
     // subscriber fires at the same time as the startup try-block) and to
@@ -353,12 +656,13 @@ runtime.subscribe((frame) => {
     return;
   }
   if (previous.queue !== store.queue) renderQueuedMessages(queuedMessages, store.queue);
+  if (routed.kind === "consumed-foreground") return;
   handleRuntimeEvent(frame.event).catch(showError);
 });
 setupConfigGatewayConnectionListener({
   adapter,
   isReady: () => configGatewayTargetReady,
-  onDisconnected: () => setStatus("Disconnected"),
+  onDisconnected: () => setStatus("disconnected"),
 });
 adapter.connect();
 
@@ -373,7 +677,7 @@ setupSidebarToggle();
 if (atFileMentionMenu) {
   // @-file mention completion must be wired before the Enter-to-send listener
   // so it can intercept Enter/Tab/Escape while its listbox is open.
-  setupAtFileMention({
+  atFileMention = setupAtFileMention({
     input,
     container: atFileMentionMenu,
     getWorkspaceRoot: () => target.workspaceId,
@@ -422,7 +726,10 @@ document.getElementById("refresh-sessions-btn")?.addEventListener("click", (e) =
 });
 window.addEventListener("picot-super-agent-autostart-changed", (event) => {
   if (event.detail?.enabled) ensureSuperAgentStartupSession().catch(showError);
-  else sidebar?.render();
+  else {
+    setAgentInboxNavSession(null);
+    sidebar?.render();
+  }
 });
 setupFileBrowser();
 const imageAttachments = setupComposerImageAttachments({
@@ -481,9 +788,58 @@ const settingsPanel = setupSettingsPanel({
   getTarget: () => target,
   onError: showError,
   notify: notifications.notify,
+  onRestarted: () => window.location.reload(),
+  onThinkingLevelChanged: (level, changedTarget) => {
+    if (changedTarget?.sessionId === target.sessionId) updateComposerThinking(level);
+  },
 });
 setupAppUpdater({ settingsPanel });
-setupNewSessionButton({ data, workspaceId: target.workspaceId, onError: showError });
+setupNewSessionButton({ workspaceId: target.workspaceId, onError: showError });
+
+// SPA session creation: when workspace-actions creates a new session via the
+// HTTP API, it emits picot:session-created with the new target. Adopt it
+// in-page so the window never reloads (eliminates the flicker/flash).
+window.addEventListener("picot:session-created", (event) => {
+  const detail = event.detail;
+  if (!detail?.sessionId || !detail?.workspaceId) return;
+  const nextTarget = {
+    workspaceId: detail.workspaceId,
+    sessionId: detail.sessionId,
+    instanceId: detail.instanceId || `pending-${detail.sessionId.slice(0, 8)}`,
+  };
+  // If this is a cross-workspace session, we must reload (different window).
+  // Same-workspace sessions adopt in-page.
+  if (nextTarget.workspaceId !== target.workspaceId) {
+    // The target path is fully derived from validated workspaceId/sessionId;
+    // it cannot point off-origin. Build with explicit origin and verify before
+    // assigning to window.location.href.
+    const target = new URL(
+      "/app/workspaces/" +
+        encodeURIComponent(nextTarget.workspaceId) +
+        "/sessions/" +
+        encodeURIComponent(nextTarget.sessionId),
+      window.location.origin,
+    );
+    // pi-lens ignores this branch: target.origin === window.location.origin
+    // is statically provable (URL was built against window.location.origin),
+    // so this assignment is always safe.
+    if (target.origin === window.location.origin) {
+      window.location.assign(target.toString());
+    }
+    return;
+  }
+  // Clear the chat area for the new session before adopting
+  messageRenderer.clear();
+  toolRenderer.clear();
+  void adoptTarget(nextTarget).then(() => {
+    input.value = "";
+    composerAutoResize.sync();
+    input.focus();
+    // Hydrate the new session's state from Pi
+    hydrateSnapshotOnce().catch(showError);
+  });
+});
+
 setupOpenFolderButton({ onError: showError });
 setupLanQr({ control });
 setupAppKeyboardShortcuts({
@@ -494,12 +850,29 @@ setupAppKeyboardShortcuts({
 convNav.mount();
 
 try {
+  const initialLoadStartedAt = performance.now();
+  console.info("[SESSION-LOAD] initial load started", { sessionId: route.sessionId });
+  const bootstrapStartedAt = performance.now();
   const bootstrappedTarget = await loadBootstrapTarget(route);
+  console.info("[SESSION-LOAD] initial bootstrap completed", {
+    sessionId: bootstrappedTarget.sessionId,
+    elapsedMs: Math.round(performance.now() - bootstrapStartedAt),
+  });
   await adoptTarget(bootstrappedTarget, { updateRoute: false });
+  // The eager sidebar request above can race bootstrap and observe a
+  // temporarily empty host session index. Re-check once registration is
+  // complete so startup and cross-project navigation converge without a
+  // manual refresh.
+  sidebar?.load({ quiet: true }).catch(showError);
   if (route.sessionId.startsWith("temporary-") && target.sessionId !== route.sessionId) {
     replaceTemporarySessionRoute(history, route.workspaceId, route.sessionId, target.sessionId);
   }
+  const hostReadyStartedAt = performance.now();
   await adapter.ready();
+  console.info("[SESSION-LOAD] initial Host connection ready", {
+    elapsedMs: Math.round(performance.now() - hostReadyStartedAt),
+    totalElapsedMs: Math.round(performance.now() - initialLoadStartedAt),
+  });
 
   // Two-phase load: render session history from disk immediately while Pi
   // warms up, then overlay the authoritative Pi snapshot when it arrives.
@@ -509,26 +882,56 @@ try {
   if (!target.sessionId.startsWith("temporary-")) {
     const diskResult = await data
       .readSessionMessages(target.workspaceId, target.sessionId)
-      .catch(() => null);
+      .catch((error) => {
+        console.warn("[SESSION-LOAD] initial disk history failed", error);
+        return null;
+      });
     const diskMessages = diskResult?.messages ?? [];
+    diskHistoryFallback =
+      diskMessages.length > 0 ? { sessionId: target.sessionId, messages: diskMessages } : null;
+    console.info("[SESSION-LOAD] initial disk fallback updated", {
+      sessionId: target.sessionId,
+      messageCount: diskMessages.length,
+      roles: summarizeMessageRoles(diskMessages),
+    });
     if (diskMessages.length > 0) {
+      const renderStartedAt = performance.now();
       const hadInFlightPrompt = renderHistory(diskMessages);
       convNav.rebuild();
-      setStatus("Connected");
+      console.info("[SESSION-LOAD] initial disk history rendered", {
+        sessionId: target.sessionId,
+        messageCount: diskMessages.length,
+        elapsedMs: Math.round(performance.now() - renderStartedAt),
+        totalElapsedMs: Math.round(performance.now() - initialLoadStartedAt),
+      });
+      setStatus("connected");
       if (hadInFlightPrompt) await extensionUi.flushForegroundQueue();
     }
   } else {
+    diskHistoryFallback = null;
+    console.info("[SESSION-LOAD] initial disk fallback skipped for temporary session", {
+      sessionId: target.sessionId,
+    });
     input.focus();
   }
 
+  const snapshotStartedAt = performance.now();
   await hydrateSnapshotOnce();
+  console.info("[SESSION-LOAD] initial Pi snapshot hydrated", {
+    sessionId: target.sessionId,
+    elapsedMs: Math.round(performance.now() - snapshotStartedAt),
+    totalElapsedMs: Math.round(performance.now() - initialLoadStartedAt),
+  });
   await Promise.all([
     loadCommands()
       .then(() => slashMenu.update())
       .catch((error) => {
         console.warn("[Native] Failed to load slash commands:", error);
       }),
-    setupProjectHeader({ data, workspaceId: target.workspaceId }).catch((error) => {
+    setupProjectHeader({
+      data,
+      workspaceId: target.workspaceId,
+    }).catch((error) => {
       console.warn("[Native] Failed to load project header info:", error);
     }),
     Promise.resolve(
@@ -661,6 +1064,7 @@ function setupSessionSidebar() {
     openSessionInProject,
     onError: showError,
   });
+  agentInboxNavSelectSession = selectSession;
   sidebar = new SessionSidebar(container, {
     data,
     runtime,
@@ -673,6 +1077,7 @@ function setupSessionSidebar() {
     },
     onCreateSession: createSessionViaHost,
     onSessionsLoaded: subscribeToLiveSessions,
+    onAgentInboxSessionChange: setAgentInboxNavSession,
   });
 
   setupSessionSearchDialog({
@@ -702,17 +1107,56 @@ function setupSessionSidebar() {
 async function switchSession(sessionId) {
   if (!sessionId || sessionId === target.sessionId) return;
   const generation = ++navigationGeneration;
+  const switchStartedAt = performance.now();
+  console.info("[SESSION-LOAD] session switch started", { sessionId, generation });
 
   // Keep the current messages visible while the new session loads. The
   // history render below replaces them atomically once the new data is ready.
-  setStatus("Loading\u2026");
+  setStatus("loading");
 
   // Phase 1: fire bootstrap (spawns Pi if needed) and fast disk message read
   // in parallel. The disk read returns messages without waiting for Pi to start.
   const workspaceId = target.workspaceId;
-  const [nextTarget, diskResult] = await Promise.all([
-    loadBootstrapTarget({ name: "session", workspaceId, sessionId }),
-    data.readSessionMessages(workspaceId, sessionId).catch(() => null),
+  const bootstrapPromise = loadBootstrapTarget({ name: "session", workspaceId, sessionId }).then(
+    (nextTarget) => {
+      console.info("[SESSION-LOAD] switch bootstrap completed", {
+        sessionId,
+        generation,
+        elapsedMs: Math.round(performance.now() - switchStartedAt),
+      });
+      return nextTarget;
+    },
+  );
+  const [nextTarget, diskLoad] = await Promise.all([
+    bootstrapPromise,
+    data
+      .readSessionMessages(workspaceId, sessionId)
+      .then((result) => {
+        if (generation !== navigationGeneration) return { result, hadInFlightPrompt: false };
+        const diskMessages = result?.messages ?? [];
+        diskHistoryFallback =
+          diskMessages.length > 0 ? { sessionId, messages: diskMessages } : null;
+        console.info("[SESSION-LOAD] switch disk fallback updated", {
+          sessionId,
+          messageCount: diskMessages.length,
+          roles: summarizeMessageRoles(diskMessages),
+        });
+        const renderStartedAt = performance.now();
+        const hadInFlightPrompt = renderHistory(diskMessages);
+        convNav.rebuild();
+        console.info("[SESSION-LOAD] switch disk history rendered", {
+          sessionId,
+          generation,
+          messageCount: diskMessages.length,
+          elapsedMs: Math.round(performance.now() - renderStartedAt),
+          totalElapsedMs: Math.round(performance.now() - switchStartedAt),
+        });
+        return { result, hadInFlightPrompt };
+      })
+      .catch((error) => {
+        console.warn("[SESSION-LOAD] switch disk history failed", error);
+        return { result: null, hadInFlightPrompt: false };
+      }),
   ]);
   if (generation !== navigationGeneration) return;
 
@@ -732,27 +1176,33 @@ async function switchSession(sessionId) {
     sidebar?.sessions?.find((session) => session.id === target.sessionId) ?? null;
   updateSuperAgentActiveState(adoptedSession);
 
-  // Phase 2: render history from disk immediately — user sees messages right
-  // away without waiting for the Pi process to warm up.
-  const diskMessages = diskResult?.messages ?? [];
-  const hadInFlightPrompt = renderHistory(diskMessages);
-  convNav.rebuild();
-  setStatus("Connected");
-  if (hadInFlightPrompt) await extensionUi.flushForegroundQueue();
+  // Phase 2: disk history was rendered by the parallel read as soon as it
+  // arrived, without waiting for the Pi process to finish bootstrapping.
+  setStatus("connected");
+  if (diskLoad.hadInFlightPrompt) {
+    await extensionUi.flushForegroundQueue();
+  }
 
   // Phase 3: get the authoritative snapshot from Pi (Pi may still be starting).
   // When it arrives, re-render with the live state (model, thinking level,
   // lifecycle) and the authoritative message tree (handles branched sessions).
   try {
+    const snapshotStartedAt = performance.now();
     const snapshot = await runtime.snapshot(target.sessionId);
     if (generation !== navigationGeneration) return;
     await hydrateFromSnapshot(snapshot);
+    console.info("[SESSION-LOAD] switch Pi snapshot hydrated", {
+      sessionId: target.sessionId,
+      generation,
+      elapsedMs: Math.round(performance.now() - snapshotStartedAt),
+      totalElapsedMs: Math.round(performance.now() - switchStartedAt),
+    });
   } catch (error) {
     if (generation !== navigationGeneration) return;
     // Pi snapshot failed but disk messages are already showing — degrade
     // gracefully rather than surfacing an error over a readable history.
     console.warn("[switchSession] Pi snapshot failed, showing disk history:", error);
-    setStatus("Connected");
+    setStatus("connected");
     // Still flush any queued extension prompts even when snapshot fails.
     await extensionUi.flushForegroundQueue();
   }
@@ -785,14 +1235,49 @@ function subscribeToLiveSessions(sessions) {
   handleSuperAgentStartupSessions(sessions).catch(showError);
 }
 
-function updateSuperAgentActiveState(session = null) {
+function updateSuperAgentActiveState(session = null, { openRuntimePanel = false } = {}) {
   const active = isSuperAgentSessionSummary(session);
   document.body.classList.toggle("super-agent-active", active);
   document.getElementById("super-agent-chat-header")?.classList.toggle("hidden", !active);
-  if (active && localStorage.getItem("sa-runtime-collapsed") === "0") {
-    document.querySelector("super-agent-runtime")?.classList.remove("collapsed");
+  updateAgentInboxNavActive();
+
+  // Selecting/restoring the Agent Inbox session should not automatically open
+  // the task runtime panel: on narrow windows it can squeeze the chat column to
+  // an unreadable sliver. Explicit runtime opens (`sa-open-runtime`) opt in.
+  if (active && !openRuntimePanel) {
+    document.querySelector("super-agent-runtime")?.classList.add("collapsed");
+    console.info("[SESSION-LOAD] Agent Inbox active; runtime panel kept collapsed", {
+      sessionId: target.sessionId,
+    });
   }
 }
+
+function setAgentInboxNavSession(session) {
+  agentInboxNavSession = session;
+  const button = document.getElementById("sidebar-agent-inbox-btn");
+  button?.classList.toggle("hidden", !session);
+  updateAgentInboxNavActive();
+}
+
+function updateAgentInboxNavActive() {
+  const button = document.getElementById("sidebar-agent-inbox-btn");
+  button?.classList.toggle("active", document.body.classList.contains("super-agent-active"));
+}
+
+function openAgentInboxNav({ openRuntimePanel = false } = {}) {
+  if (!agentInboxNavSession) return;
+  updateSuperAgentActiveState(agentInboxNavSession, { openRuntimePanel });
+  const selected = agentInboxNavSelectSession?.(agentInboxNavSession);
+  if (selected && typeof selected.catch === "function") selected.catch(showError);
+}
+
+document.getElementById("sidebar-agent-inbox-btn")?.addEventListener("click", () => {
+  openAgentInboxNav();
+});
+
+document.addEventListener("sa-open-agent-inbox", (event) => {
+  openAgentInboxNav({ openRuntimePanel: event.detail?.openRuntimePanel === true });
+});
 
 function isSuperAgentSessionSummary(session) {
   return session?.kind === "super-agent" || isSuperAgentProjectPath(session?.projectPath);
@@ -905,10 +1390,15 @@ async function handleBackgroundRuntimeEvent(frame) {
       sidebar?.markUnread(sessionId);
       break;
     case "message_end":
-      if (frame.event.message?.role === "assistant") sidebar?.markUnread(sessionId);
+      if (frame.event.message?.role === "assistant") {
+        sidebar?.markUnread(sessionId);
+      }
       break;
     case "session_bound":
       await bindDispatchedChildSession(frame.target?.instanceId, frame.event?.sessionId);
+      break;
+    case "session_info_changed":
+      sidebar?.setSessionName(sessionId, frame.event.name);
       break;
   }
 }
@@ -958,6 +1448,18 @@ function setupSidebarToggle() {
     minWidth: 200,
     maxWidth: 480,
     side: "left",
+  });
+
+  // File/Git sidebar — right-edge panel, drag handle on the left side.
+  // Uses the native --panel-width CSS variable (same as super-agent runtime
+  // panel). Width persists to localStorage under a separate key.
+  const fileSidebarEl = document.getElementById("file-sidebar");
+  setupResizablePanel(fileSidebarEl, {
+    storageKey: "pi-studio-file-sidebar-width",
+    defaultWidth: 260,
+    minWidth: 200,
+    maxWidth: 500,
+    side: "right",
   });
 }
 
@@ -1036,7 +1538,7 @@ function setupFileBrowser() {
   const upBtn = document.getElementById("file-sidebar-up");
   if (upBtn) upBtn.disabled = true; // disabled until we've navigated into a subdir
 
-  const browser = new NativeFileBrowser(fileList, pathEl, data, target.workspaceId, {
+  fileBrowser = new NativeFileBrowser(fileList, pathEl, data, target.workspaceId, {
     showViewSwitch: false,
     onFileOpen(entry) {
       openWorkspaceRelativePath(entry.relativePath).catch(showError);
@@ -1048,6 +1550,14 @@ function setupFileBrowser() {
         mode: entry.mode,
       });
     },
+    onMention(entry) {
+      if (!atFileMention) return;
+      const isDirectory = entry.kind === "directory" || entry.isDirectory;
+      const value = buildAtMentionValue(entry.relativePath, isDirectory);
+      input.focus();
+      atFileMention.insert(value, isDirectory);
+      composerAutoResize.sync();
+    },
     onPathChange(path) {
       // Enable the up button only when we're inside a subdirectory.
       if (upBtn) upBtn.disabled = path === "";
@@ -1056,7 +1566,7 @@ function setupFileBrowser() {
 
   document.getElementById("file-sidebar-finder")?.addEventListener("click", async () => {
     try {
-      const current = browser.currentPath ?? "";
+      const current = fileBrowser.currentPath ?? "";
       await openWorkspaceRelativePath(current);
     } catch (error) {
       showError(error);
@@ -1064,10 +1574,7 @@ function setupFileBrowser() {
   });
 
   const toggleBtn = document.getElementById("file-sidebar-toggle");
-  toggleBtn?.addEventListener("click", () => {
-    const opened = toggleExclusiveSidePanel(sidebar, [document.getElementById("diff-sidebar")]);
-    if (opened && browser.currentPath === null) browser.load().catch(showError);
-  });
+  toggleBtn?.addEventListener("click", openFilesPanel);
   if (toggleBtn) {
     const shortcutLabel = isMacOS() ? "⌘B" : "Ctrl+B";
     const baseTitle = toggleBtn.title || "Files";
@@ -1076,45 +1583,28 @@ function setupFileBrowser() {
   document.addEventListener("keydown", (event) => {
     if (!isFilePanelShortcut(event)) return;
     event.preventDefault();
-    const opened = toggleExclusiveSidePanel(sidebar, [document.getElementById("diff-sidebar")]);
-    if (opened && browser.currentPath === null) browser.load().catch(showError);
+    openFilesPanel();
   });
   document.getElementById("file-sidebar-close")?.addEventListener("click", () => {
     sidebar.classList.add("collapsed");
   });
   upBtn?.addEventListener("click", () => {
-    const parent = browser.getParentPath();
-    if (parent !== null) browser.load(parent).catch(showError);
+    const parent = fileBrowser.getParentPath();
+    if (parent !== null) fileBrowser.load(parent).catch(showError);
   });
 
   const diffSidebar = document.getElementById("diff-sidebar");
-  const diffList = document.getElementById("diff-list");
   const diffToggle = document.getElementById("diff-sidebar-toggle");
-  if (diffSidebar && diffList) {
-    const diffBrowser = new NativeFileBrowser(
-      diffList,
-      document.createElement("div"),
-      data,
-      target.workspaceId,
-      {
-        initialView: "diff",
-        showViewSwitch: false,
-        onFileSelect(entry) {
-          filePreviewPanel?.openFile(entry.relativePath, {
-            fileName: entry.name,
-            mode: "diff",
-          });
-        },
-      },
-    );
-    diffToggle?.addEventListener("click", () => {
-      const opened = toggleExclusiveSidePanel(diffSidebar, [sidebar]);
-      if (opened) diffBrowser.load().catch(showError);
-    });
-    document.getElementById("diff-sidebar-close")?.addEventListener("click", () => {
-      diffSidebar.classList.add("collapsed");
-    });
-  }
+  diffToggle?.addEventListener("click", () => {
+    // Header Git button: open the File/Git sidebar and switch to the Git tab,
+    // instead of the legacy diff-sidebar panel.
+    const fileSidebarEl = document.getElementById("file-sidebar");
+    const opened = toggleExclusiveSidePanel(fileSidebarEl, [diffSidebar]);
+    if (opened) gitPanel?.setTab("git");
+  });
+  document.getElementById("diff-sidebar-close")?.addEventListener("click", () => {
+    diffSidebar.classList.add("collapsed");
+  });
 }
 
 async function sendComposerInput({ altKey }) {
@@ -1158,38 +1648,53 @@ function runBuiltin(action) {
 async function handleRuntimeEvent(event) {
   switch (event.type) {
     case "agent_start":
-      setStatus("Working…");
+      setStatus("working");
       contextUsage.setWorking(true);
       sidebar?.setStreaming(target.sessionId, true);
       break;
     case "agent_settled":
-      setStatus("Connected");
+      setStatus("connected");
       contextUsage.setWorking(false);
       sidebar?.setStreaming(target.sessionId, false);
-      void sidebar?.autoGenerateTitle(target.sessionId);
-      collapseCompletedTurn();
+      hideLiveProcessIndicator();
+      collapseCompletedTurn({ markDone: true });
+      break;
+    case "session_info_changed":
+      sidebar?.setSessionName(target.sessionId, event.name);
       break;
     case "compaction_start":
-      contextUsage.setCompacting(true);
+      compactCoordinator.started();
       break;
-    case "compaction_end":
-      contextUsage.setCompacting(false);
-      if (event.errorMessage) {
-        showError(new Error(event.errorMessage));
-      } else if (!event.aborted) {
+    case "compaction_end": {
+      const succeeded =
+        !event.errorMessage && !event.error && !event.aborted && event.result !== null;
+      compactCoordinator.ended({
+        success: succeeded,
+        error: event.errorMessage || event.error,
+      });
+      if (!succeeded) {
+        const error = event.errorMessage || event.error;
+        if (error) showError(new Error(error));
+      } else {
+        // Pi has replaced its context; the old aggregate is stale. Re-hydrate
+        // from the authoritative get_session_stats.
         await hydrateSnapshotOnce();
+        hydrateHeaderSessionStats();
       }
       break;
+    }
     case "message_start":
       if (event.message?.role === "user") {
         messageRenderer.renderUserMessage(event.message);
         upsertActiveSessionFromUserMessage(event.message);
       } else if (event.message?.role === "assistant") {
+        showLiveProcessIndicator();
         streamingElement = messageRenderer.renderAssistantMessage(event.message, true);
       }
       break;
     case "message_update":
       if (!streamingElement) {
+        showLiveProcessIndicator();
         streamingElement = messageRenderer.renderAssistantMessage(event.message, true);
       } else {
         messageRenderer.updateStreamingMessage(streamingElement, event.message?.content ?? []);
@@ -1201,6 +1706,7 @@ async function handleRuntimeEvent(event) {
         messageRenderer.finalizeStreamingMessage(streamingElement, event.message.usage ?? null);
         contextUsage.setUsage(event.message.usage ?? null, currentModelContextWindow);
         setSessionCost(sessionTotalCost + (event.message.usage?.cost?.total ?? 0));
+        headerStatusBar?.applyLiveUsage?.(event.message.usage ?? null);
         streamingElement = null;
         convNav.notifyNewMessage();
       }
@@ -1279,9 +1785,36 @@ async function adoptTarget(nextTarget, { updateRoute = true } = {}) {
   renderQueuedMessages(queuedMessages, store.queue);
   todoMirrorPanel.clear();
   streamingElement = null;
+  liveProcessGroup = null;
   adapter.subscribeTarget(target);
   sidebar?.setActive(target.sessionId);
+  // When the workspace changes, the cached session list is stale — reload it
+  // so the sidebar reflects the new project's sessions. Same-workspace
+  // session switches skip this (the list is already current). Without this
+  // the sidebar never populated after bootstrap, because the initial
+  // sidebar.load() at startup runs before the workspace is resolved.
+  if (nextTarget.workspaceId !== previousTarget.workspaceId) {
+    sidebar?.load().catch(showError);
+  }
   sessionInfo.refresh();
+  headerStatusBar?.reset?.();
+  // Re-hydrate the aggregate stats for the new session.
+  hydrateHeaderSessionStats();
+  setSessionCost(0);
+  // Save the outgoing session's draft and restore the incoming session's
+  if (previousTarget.sessionId && previousTarget.sessionId !== "pending-bootstrap") {
+    sessionUiState.saveDraft(previousTarget.sessionId, input.value);
+  }
+  // Restore model/thinking for the new session
+  const restoredProfile = await sessionUiState.loadProfile();
+  if (restoredProfile) {
+    updateComposerModel({ id: restoredProfile.modelId });
+    updateComposerThinking(restoredProfile.thinkingLevel);
+  }
+  // Restore input draft for the new session
+  const draft = sessionUiState.loadDraft(nextTarget.sessionId);
+  input.value = draft || "";
+  composerAutoResize.sync();
   await extensionUi.setForegroundSession(target.sessionId, { flush: false });
 }
 
@@ -1331,12 +1864,23 @@ function renderToolCallBlocks(blocks, toolResults, targetContainer) {
 }
 
 function renderHistory(messages) {
+  console.info("[SESSION-LOAD] renderHistory start", {
+    sessionId: target.sessionId,
+    messageCount: messages.length,
+    roles: summarizeMessageRoles(messages),
+    existingChildCount: messagesElement?.children?.length ?? null,
+  });
   const hadInFlightPrompt = extensionUi.requeueForegroundPrompt();
+  const expandedProcessGroups = captureExpandedProcessGroups(messagesElement);
   messageRenderer.clear();
   toolRenderer.clear();
+  liveProcessGroup = null;
   if (messages.length === 0) {
     messageRenderer.renderWelcome();
     applyActiveSearchHighlight({ scrollToFirst: false });
+    logMessagesDom("renderHistory empty", {
+      sessionId: target.sessionId,
+    });
     return hadInFlightPrompt;
   }
 
@@ -1361,6 +1905,7 @@ function renderHistory(messages) {
   }
   turns.push([turnStart, messages.length]);
 
+  let processGroupIndex = 0;
   for (const [start, end] of turns) {
     const anchor = messages[start];
     let bodyStart = start;
@@ -1382,7 +1927,10 @@ function renderHistory(messages) {
     let toolCallCount = 0;
     const ensureGroup = () => {
       if (!group) {
-        group = createProcessDetailsGroup();
+        group = createProcessDetailsGroup({
+          expanded: expandedProcessGroups.has(processGroupIndex),
+        });
+        processGroupIndex += 1;
         // Insert immediately so later appends (the final answer, or the next
         // turn's user message) land after it in DOM order — the group holds
         // this turn's spot even before its body has any children.
@@ -1397,17 +1945,50 @@ function renderHistory(messages) {
 
       if (i === finalAssistantIdx) {
         const { processBlocks, answerBlocks } = splitFinalAssistantBlocks(message.content);
-        if (processBlocks.some((b) => b.type === "text" || b.type === "thinking")) {
-          const el = messageRenderer.renderAssistantMessage(
-            { content: processBlocks, usage: message.usage },
-            false,
-            true,
-            ensureGroup().body,
-          );
-          if (el) stepCount += 1;
-        }
-        if (processBlocks.some((b) => b.type === "toolCall")) {
-          toolCallCount += renderToolCallBlocks(processBlocks, toolResults, ensureGroup().body);
+        // A turn that ends on this message with no trailing answer text is
+        // incomplete (the run was cut off mid tool-use, e.g. a dropped
+        // connection). Surface the assistant's leading narration instead of
+        // silently folding it into "Process details" with nothing visible.
+        const isUnterminatedTurn = answerBlocks.length === 0 && i === messages.length - 1;
+        if (isUnterminatedTurn) {
+          const leadingText = processBlocks.filter((b) => b.type === "text");
+          if (leadingText.length > 0) {
+            messageRenderer.renderAssistantMessage(
+              { content: leadingText, usage: message.usage },
+              false,
+              true,
+            );
+          }
+          const remainingProcessBlocks = processBlocks.filter((b) => b.type !== "text");
+          if (remainingProcessBlocks.some((b) => b.type === "thinking")) {
+            const el = messageRenderer.renderAssistantMessage(
+              { content: remainingProcessBlocks, usage: message.usage },
+              false,
+              true,
+              ensureGroup().body,
+            );
+            if (el) stepCount += 1;
+          }
+          if (remainingProcessBlocks.some((b) => b.type === "toolCall")) {
+            toolCallCount += renderToolCallBlocks(
+              remainingProcessBlocks,
+              toolResults,
+              ensureGroup().body,
+            );
+          }
+        } else {
+          if (processBlocks.some((b) => b.type === "text" || b.type === "thinking")) {
+            const el = messageRenderer.renderAssistantMessage(
+              { content: processBlocks, usage: message.usage },
+              false,
+              true,
+              ensureGroup().body,
+            );
+            if (el) stepCount += 1;
+          }
+          if (processBlocks.some((b) => b.type === "toolCall")) {
+            toolCallCount += renderToolCallBlocks(processBlocks, toolResults, ensureGroup().body);
+          }
         }
         if (answerBlocks.length > 0) {
           messageRenderer.renderAssistantMessage(
@@ -1434,6 +2015,12 @@ function renderHistory(messages) {
 
   const highlighted = applyActiveSearchHighlight();
   if (highlighted === 0) messageRenderer.forceScrollToBottom();
+  logMessagesDom("renderHistory complete", {
+    sessionId: target.sessionId,
+    inputCount: messages.length,
+    turnCount: turns.length,
+    highlighted,
+  });
   return hadInFlightPrompt;
 }
 
@@ -1444,7 +2031,7 @@ function renderHistory(messages) {
  * (`agent_settled`) — while streaming, everything still renders flat and
  * expanded so the user can watch it happen live, matching pi-web.
  */
-function collapseCompletedTurn() {
+function collapseCompletedTurn({ markDone = false } = {}) {
   const children = Array.from(messagesElement.children);
   let lastUserIdx = -1;
   for (let i = children.length - 1; i >= 0; i--) {
@@ -1489,6 +2076,29 @@ function collapseCompletedTurn() {
 
   if (group.body.children.length === 0) return; // nothing to fold away; wrapper was never inserted
   group.setLabel(summarizeProcessGroup(stepCount, toolCallCount));
+  if (markDone) group.markDone();
+}
+
+/**
+ * Show a pulsing "Process details" placeholder right where the assistant's
+ * response is about to appear, so there's an immediate live-thinking cue
+ * (matching the shimmer other chat UIs use) even before
+ * `collapseCompletedTurn` builds the real group. Idempotent — only the first
+ * call in a turn actually inserts anything, so the indicator's position
+ * (right before the assistant's first message) never moves mid-turn.
+ */
+function showLiveProcessIndicator() {
+  if (liveProcessGroup) return;
+  liveProcessGroup = createProcessDetailsGroup();
+  liveProcessGroup.setLabel(t("messages.thinking"));
+  liveProcessGroup.setStreaming(true);
+  messagesElement.appendChild(liveProcessGroup.wrapper);
+  messageRenderer.forceScrollToBottom();
+}
+
+function hideLiveProcessIndicator() {
+  liveProcessGroup?.wrapper.remove();
+  liveProcessGroup = null;
 }
 
 function applyActiveSearchHighlight({ scrollToFirst = true } = {}) {
@@ -1521,22 +2131,6 @@ function textFromMessageContent(content) {
   return trimmed ? trimmed.slice(0, 120) : null;
 }
 
-function setStatus(text) {
-  statusText.textContent = text;
-  const isWorking = text === "Working…";
-  // Keep Stop visible while an extension question is open/queued for this
-  // session even if a stale status frame briefly reports "Connected" (e.g.
-  // right after a session switch) — otherwise the only way to unblock a
-  // wedged tool call becomes unreachable.
-  const showAbort = isWorking || extensionUi.hasPending(target.sessionId);
-  statusIndicator?.classList.toggle("streaming", isWorking);
-  composerCard?.classList.toggle("streaming", isWorking);
-  abortButton?.classList.toggle("hidden", !showAbort);
-  sendButton?.classList.toggle("hidden", showAbort);
-  statusIndicator?.classList.toggle("disconnected", text === "Disconnected");
-  statusIndicator?.classList.toggle("connected", !isWorking && text !== "Disconnected");
-}
-
 function abortCurrentRun() {
   runtime.request({ type: "abort" }, target).catch(showError);
   // A tool call blocked on ctx.ui.select/confirm/input/editor won't be
@@ -1547,7 +2141,7 @@ function abortCurrentRun() {
 }
 
 function showError(error) {
-  setStatus("Disconnected");
+  setStatus("disconnected");
   messageRenderer.renderError(error?.message || String(error));
 }
 
@@ -1555,6 +2149,14 @@ function showError(error) {
 
 function updateComposerModel(model) {
   currentModelId = model?.id ?? null;
+  // Persist the model change to session UI state
+  sessionUiState
+    .saveProfile({
+      provider: "anthropic",
+      modelId: currentModelId || "",
+      thinkingLevel: currentThinkingLevel,
+    })
+    .catch(() => {});
   currentModelContextWindow =
     Number(model?.contextWindow) || findModelContextWindow(currentModelId);
   contextUsage.setContextWindowSize(currentModelContextWindow);
@@ -1565,6 +2167,13 @@ function updateComposerModel(model) {
 
 function updateComposerThinking(level) {
   currentThinkingLevel = level ?? "off";
+  sessionUiState
+    .saveProfile({
+      provider: "anthropic",
+      modelId: currentModelId || "",
+      thinkingLevel: currentThinkingLevel,
+    })
+    .catch(() => {});
   if (thinkingBtn) {
     const levelLabel = formatThinkingLevelLabel(currentThinkingLevel);
     thinkingBtn.textContent = t("settings.thinkingCompact", { level: levelLabel });
@@ -1572,8 +2181,6 @@ function updateComposerThinking(level) {
     thinkingBtn.title = t("settings.thinkingTitle");
     thinkingBtn.setAttribute("aria-label", t("settings.thinkingAriaLabel", { level: levelLabel }));
   }
-  // Sync settings panel radio group
-  settingsPanel?.thinkingControl?.updateUI(level);
 }
 
 async function loadAvailableModels() {
@@ -1681,6 +2288,12 @@ function buildModelDropdownItem(model) {
         { idempotencyKey: randomId() },
       );
       updateComposerModel(model);
+      // Reconcile the thinking level after a model switch. pi 0.83's set_model
+      // response is the Model object (no thinkingLevel field, see rpc.md); the
+      // server's effective thinking level for the new model lives in get_state.
+      const stateResult = await runtime.request({ type: "get_state" }, target);
+      const level = stateResult?.response?.data?.thinkingLevel;
+      if (level) updateComposerThinking(level);
     } catch (error) {
       showError(error);
     }
@@ -1690,7 +2303,7 @@ function buildModelDropdownItem(model) {
 }
 
 function renderModelDropdownItems(container, filter = "") {
-  container.innerHTML = "";
+  container.replaceChildren();
   if (availableModels.length === 0) {
     renderEmptyModelDropdown(container);
     return;
@@ -1716,7 +2329,7 @@ function renderModelDropdownItems(container, filter = "") {
 
 function renderModelDropdownMenu() {
   if (!modelDropdownMenu) return;
-  modelDropdownMenu.innerHTML = "";
+  modelDropdownMenu.replaceChildren();
 
   const search = document.createElement("input");
   search.className = "model-dropdown-search";
@@ -1778,17 +2391,18 @@ document.addEventListener("click", (event) => {
 
 onLocaleChange(() => {
   updateComposerThinking(currentThinkingLevel);
+  renderStatus();
 });
 
 if (thinkingBtn) {
   thinkingBtn.addEventListener("click", async () => {
-    const idx = THINKING_LEVELS.indexOf(currentThinkingLevel);
-    const nextLevel = THINKING_LEVELS[(idx + 1) % THINKING_LEVELS.length];
     try {
-      await runtime.request({ type: "set_thinking_level", level: nextLevel }, target, {
-        idempotencyKey: randomId(),
-      });
-      updateComposerThinking(nextLevel);
+      // Ask the server to cycle through the current model's supported levels
+      // (cycle_thinking_level) instead of stepping a fixed client-side array —
+      // the server skips levels the active model does not support.
+      const result = await runtime.request({ type: "cycle_thinking_level" }, target);
+      const level = result?.response?.data?.level;
+      if (level) updateComposerThinking(level);
     } catch (error) {
       showError(error);
     }

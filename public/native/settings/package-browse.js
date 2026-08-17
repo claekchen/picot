@@ -1,3 +1,4 @@
+import { onLocaleChange, t } from "../../i18n.js";
 import { getPackageInstallFailure } from "../../packages/install-status.js";
 
 // Community package browser for the Settings → Extensions tab.
@@ -158,7 +159,13 @@ export function setupPackageBrowse(control, { notify } = {}) {
     }
     try {
       const configured = await control.listPiPackages();
-      installedSet = new Set(Array.isArray(configured) ? configured : []);
+      // listPiPackages now returns package objects; keep just the sources for
+      // installed-state matching against the catalog.
+      installedSet = new Set(
+        (Array.isArray(configured) ? configured : []).map((pkg) =>
+          typeof pkg === "string" ? pkg : pkg.source,
+        ),
+      );
     } catch {
       installedSet = new Set();
     }
@@ -226,16 +233,18 @@ export function setupPackageBrowse(control, { notify } = {}) {
 
     const badges = document.createElement("div");
     badges.className = "pkg-browse-badges";
-    for (const t of pkg.types || []) {
+    for (const type of pkg.types || []) {
       const badge = document.createElement("span");
       badge.className = "pkg-browse-badge";
-      badge.dataset.type = t;
-      badge.textContent = t;
+      badge.dataset.type = type;
+      badge.textContent = type;
       badges.appendChild(badge);
     }
     const downloads = document.createElement("span");
     downloads.className = "pkg-browse-meta";
-    downloads.textContent = `${(pkg.downloads || 0).toLocaleString()}/mo`;
+    downloads.textContent = t("extensions.downloadsPerMonth", {
+      count: (pkg.downloads || 0).toLocaleString(),
+    });
     badges.appendChild(downloads);
     info.appendChild(badges);
 
@@ -254,17 +263,21 @@ export function setupPackageBrowse(control, { notify } = {}) {
 
     if (!canManage) {
       button.disabled = true;
-      setExtensionActionButton(button, "Desktop only");
+      setExtensionActionButton(button, t("extensions.desktopOnly"));
     } else {
-      setExtensionActionButton(button, installed ? "Uninstall" : "Install");
+      setExtensionActionButton(button, installed ? t("actions.uninstall") : t("actions.install"));
       button.addEventListener("click", async () => {
         button.disabled = true;
         button.classList.add("loading");
-        const previous = installed ? "Uninstall" : "Install";
-        setExtensionActionButton(button, installed ? "Uninstalling…" : "Installing…", true);
+        const previous = installed ? t("actions.uninstall") : t("actions.install");
+        setExtensionActionButton(
+          button,
+          installed ? t("status.uninstalling") : t("status.installing"),
+          true,
+        );
         status.hidden = false;
         status.classList.remove("is-error");
-        status.textContent = installed ? "Removing…" : "Installing…";
+        status.textContent = installed ? t("status.removing") : t("status.installing");
         status.title = status.textContent;
         try {
           if (installed) {
@@ -360,16 +373,19 @@ export function setupPackageBrowse(control, { notify } = {}) {
 
     if (countEl) {
       if (results.length === 0) {
-        countEl.textContent = `0 of ${results.length}`;
+        countEl.textContent = t("extensions.browseCountZero", { total: results.length });
       } else {
-        countEl.textContent = `${start + 1}–${start + pageResults.length} of ${results.length}`;
+        countEl.textContent = t("extensions.browseCountRange", {
+          start: start + 1,
+          end: start + pageResults.length,
+          total: results.length,
+        });
       }
     }
 
     listEl.innerHTML = "";
     if (!results.length) {
-      listEl.innerHTML =
-        '<div class="settings-api-keys-empty pkg-browse-full-row">No packages match your filters.</div>';
+      listEl.innerHTML = `<div class="settings-api-keys-empty pkg-browse-full-row">${escapeHtml(t("extensions.noPackagesMatch"))}</div>`;
       renderPagination(totalPages);
       return;
     }
@@ -384,16 +400,15 @@ export function setupPackageBrowse(control, { notify } = {}) {
       return;
     }
     loading = true;
-    listEl.innerHTML =
-      '<div class="settings-api-keys-loading pkg-browse-full-row">Loading packages...</div>';
+    listEl.innerHTML = `<div class="settings-api-keys-loading pkg-browse-full-row">${escapeHtml(t("extensions.loadingPackages"))}</div>`;
     try {
       const [packages] = await Promise.all([fetchCatalog(), refreshInstalled()]);
       allPackages = packages;
       loaded = true;
       render();
     } catch (err) {
-      const message = String(err?.message || err || "Failed to load packages");
-      listEl.innerHTML = `<div class="settings-api-keys-empty pkg-browse-full-row">${escapeHtml(message)} <button type="button" class="settings-value-btn" id="pkg-browse-retry">Retry</button></div>`;
+      const message = String(err?.message || err || t("extensions.failedToLoadPackages"));
+      listEl.innerHTML = `<div class="settings-api-keys-empty pkg-browse-full-row">${escapeHtml(message)} <button type="button" class="settings-value-btn" id="pkg-browse-retry">${escapeHtml(t("actions.retry"))}</button></div>`;
       document.getElementById("pkg-browse-retry")?.addEventListener("click", () => load(true));
     } finally {
       loading = false;
@@ -435,6 +450,10 @@ export function setupPackageBrowse(control, { notify } = {}) {
       render();
     });
   }
+
+  onLocaleChange(() => {
+    if (loaded) render();
+  });
 
   return { load };
 }

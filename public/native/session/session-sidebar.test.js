@@ -1,6 +1,20 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { initI18n, t } from "../../i18n.js";
 import { setSuperAgentEnabled } from "../../super-agent/settings.js";
 import { formatSessionTime, SessionSidebar } from "./session-sidebar.js";
+
+// Test file lives at public/native/session/session-sidebar.test.js.
+// i18n locale JSONs live at public/locales/en.json. Vitest's
+// process.cwd() inside the jsdom test environment resolves to the
+// test file's directory, not the repo root, so we derive the locale
+// path from import.meta.url (always the real file URL under vitest ESM).
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const EN_LOCALE_PATH = join(__dirname, "..", "..", "locales", "en.json");
+const enMessages = JSON.parse(readFileSync(EN_LOCALE_PATH, "utf8"));
 
 function makeSidebar(sessions, overrides = {}) {
   const container = document.createElement("div");
@@ -44,6 +58,16 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+beforeEach(async () => {
+  globalThis.fetch = vi.fn(async (input) => {
+    if (String(input).includes("/locales/")) {
+      return { ok: true, status: 200, json: async () => enMessages };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  });
+  await initI18n();
+});
+
 describe("formatSessionTime", () => {
   it("renders relative labels instead of raw ISO strings", () => {
     const now = Date.now();
@@ -60,14 +84,37 @@ describe("formatSessionTime", () => {
 });
 
 describe("SessionSidebar.render", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear();
+    // Load the English locale so context-menu labels resolve before
+    // the first render. P6 i18n-ized the hardcoded "Rename" /
+    // "Archive all sessions" entries; without this they read back
+    // as their key strings.
+    const enJson = readFileSync(EN_LOCALE_PATH, "utf8");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        if (String(input).includes("/locales/en.json")) {
+          return new Response(enJson);
+        }
+        return new Response("{}", { status: 404 });
+      }),
+    );
+    await initI18n();
     document.querySelectorAll(".session-context-menu").forEach((menu) => {
       menu.remove();
     });
+    globalThis.fetch = vi.fn(async (input) => {
+      if (String(input).includes("/locales/")) {
+        return { ok: true, status: 200, json: async () => enMessages };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    await initI18n();
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
@@ -81,6 +128,17 @@ describe("SessionSidebar.render", () => {
     expect(container.querySelector(".session-time")).toBeNull();
   });
 
+  it("updates a generated session name while the agent is still running", async () => {
+    const { sidebar, container } = makeSidebar([
+      { id: "s-active", timestamp: new Date().toISOString(), firstMessage: "Help me name this" },
+    ]);
+    await sidebar.load();
+
+    sidebar.setSessionName("s-active", "Generated in Parallel");
+
+    expect(container.querySelector(".session-title").textContent).toBe("Generated in Parallel");
+  });
+
   it("generates and persists a title for the active session", async () => {
     const { sidebar, container, config, runtime } = makeSidebar([
       { id: "s-active", timestamp: new Date().toISOString(), name: "Old title" },
@@ -91,15 +149,21 @@ describe("SessionSidebar.render", () => {
       new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }),
     );
     const generate = Array.from(document.querySelectorAll(".context-menu-item")).find((row) =>
-      row.textContent.toLowerCase().includes("generatetitle"),
+      row.textContent.toLowerCase().includes("generate title"),
     );
+    if (!generate) {
+      const all = Array.from(document.querySelectorAll(".context-menu-item")).map(
+        (row) => row.textContent,
+      );
+      throw new Error(`Generate title row missing. Rows: ${JSON.stringify(all)}`);
+    }
     generate.click();
 
     await vi.waitFor(() =>
       expect(config.call).toHaveBeenCalledWith(
         "generate_session_title",
         {},
-        { timeoutMs: 100_000 },
+        { timeoutMs: 100_000, target: expect.objectContaining({ sessionId: "s-active" }) },
       ),
     );
     await vi.waitFor(() =>
@@ -110,23 +174,6 @@ describe("SessionSidebar.render", () => {
       ),
     );
     expect(item.querySelector(".session-title").textContent).toBe("Generated title");
-  });
-
-  it("automatically generates one title for an unnamed active session", async () => {
-    const { sidebar, config, runtime } = makeSidebar([
-      { id: "s-active", timestamp: new Date().toISOString(), firstMessage: "Help me debug it" },
-    ]);
-    await sidebar.load();
-
-    await sidebar.autoGenerateTitle("s-active");
-    await sidebar.autoGenerateTitle("s-active");
-
-    expect(config.call).toHaveBeenCalledTimes(1);
-    expect(runtime.request).toHaveBeenCalledWith(
-      { type: "set_session_name", name: "Generated title" },
-      expect.objectContaining({ sessionId: "s-active" }),
-      expect.objectContaining({ idempotencyKey: expect.any(String) }),
-    );
   });
 
   it("renames a historical session through Pi SessionManager config", async () => {
@@ -150,6 +197,14 @@ describe("SessionSidebar.render", () => {
     const rename = Array.from(document.querySelectorAll(".context-menu-item")).find((row) =>
       row.textContent.includes("Rename"),
     );
+    if (!rename) {
+      // Surface what was rendered so the test fails with a useful message
+      // rather than the cryptic "Cannot read properties of undefined".
+      const all = Array.from(document.querySelectorAll(".context-menu-item")).map(
+        (row) => row.textContent,
+      );
+      throw new Error(`Rename row missing from context menu. Rows: ${JSON.stringify(all)}`);
+    }
     rename.click();
     const input = item.querySelector(".session-rename-input");
     input.value = "New title";
@@ -163,17 +218,6 @@ describe("SessionSidebar.render", () => {
     );
     expect(runtime.request).not.toHaveBeenCalled();
     expect(item.querySelector(".session-title").textContent).toBe("New title");
-  });
-
-  it("does not replace an existing custom title automatically", async () => {
-    const { sidebar, config } = makeSidebar([
-      { id: "s-active", timestamp: new Date().toISOString(), name: "Keep this title" },
-    ]);
-    await sidebar.load();
-
-    await sidebar.autoGenerateTitle("s-active");
-
-    expect(config.call).not.toHaveBeenCalled();
   });
 
   it("retries transient load failures before showing the manual retry error", async () => {
@@ -244,6 +288,40 @@ describe("SessionSidebar.render", () => {
 
     expect(container.textContent).toContain("Fresh");
     expect(container.textContent).not.toContain("Cached");
+  });
+
+  it("keeps cached sessions and Agent Inbox when an early host response is empty", async () => {
+    setSuperAgentEnabled(true);
+    const sessions = [
+      {
+        id: "s-active",
+        timestamp: "2026-08-09T01:00:00.000Z",
+        name: "Current session",
+        projectPath: "/ws-1",
+        projectName: "ws-1",
+        isCurrentWorkspace: true,
+      },
+      {
+        id: "agent-inbox",
+        timestamp: "2026-08-09T02:00:00.000Z",
+        projectPath: "/Users/me/.pi/agent/super-agent",
+        projectName: "super-agent",
+        isCurrentWorkspace: false,
+      },
+    ];
+    localStorage.setItem("picot-session-list-cache:ws-1", JSON.stringify(sessions));
+    const onAgentInboxSessionChange = vi.fn();
+    const { sidebar, container, data } = makeSidebar([], { onAgentInboxSessionChange });
+    data.listAllSessions.mockResolvedValueOnce({ sessions: [] });
+
+    await sidebar.load();
+
+    expect(container.querySelector('[data-session-id="s-active"]')).not.toBeNull();
+    expect(sidebar.sessions).toHaveLength(2);
+    expect(onAgentInboxSessionChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "agent-inbox", kind: "super-agent" }),
+    );
+    expect(JSON.parse(localStorage.getItem("picot-session-list-cache:ws-1"))).toHaveLength(2);
   });
 
   it("clears a cached in-progress status when the live session list has no runtime status", async () => {
@@ -490,10 +568,12 @@ describe("SessionSidebar.render", () => {
     sidebar.toggleFavourite("s-fav");
     sidebar.toggleArchived("s-arc");
     await sidebar.load();
-    expect(container.querySelector(".favourites-group")).toBeTruthy();
+    // In the 4-section model (RECENT/PINNED/PROJECTS/ARCHIVED) favourites
+    // are not a separate section — they live under PROJECTS. Archived
+    // sessions get their own ARCHIVED section.
     expect(container.querySelector(".archived-group")).toBeTruthy();
     expect(
-      container.querySelector('.favourites-group .session-item[data-session-id="s-fav"]'),
+      container.querySelector('.projects-group .session-item[data-session-id="s-fav"]'),
     ).toBeTruthy();
     expect(
       container.querySelector('.archived-group .session-item[data-session-id="s-arc"]'),
@@ -520,7 +600,10 @@ describe("SessionSidebar.render", () => {
     currentHeader.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
     const menuItem = document.querySelector(".session-context-menu .context-menu-item");
 
-    expect(menuItem?.textContent).toContain("Archive all sessions");
+    // The first row is the i18n-ized "Archive sessions" action.
+    // Older snapshots hardcoded "Archive all sessions"; the key now
+    // resolves to that label only when the en.json locale is loaded.
+    expect(menuItem?.textContent).toContain("Archive sessions");
     menuItem.click();
 
     expect(sidebar.isArchived("s-fav")).toBe(true);
@@ -533,43 +616,35 @@ describe("SessionSidebar.render", () => {
     expect(container.querySelector(".archived-group .project-group")).toBeNull();
   });
 
-  it("pins the latest Agent Inbox session before normal projects and hides its history", async () => {
+  it("reports the latest Agent Inbox session for top-level navigation and hides its history", async () => {
     setSuperAgentEnabled(true);
-    const { sidebar, container, onSelect } = makeSidebar([
-      { id: "project", timestamp: "2026-06-02T00:00:00.000Z", name: "Project chat" },
-      {
-        id: "sa-old",
-        timestamp: "2026-06-01T00:00:00.000Z",
-        name: "Old Inbox",
-        projectPath: "/Users/me/.pi/agent/super-agent",
-        projectName: "super-agent",
-        isCurrentWorkspace: false,
-      },
-      {
-        id: "sa-new",
-        timestamp: "2026-06-03T00:00:00.000Z",
-        name: "New Inbox",
-        projectPath: "/Users/me/.pi/agent/super-agent",
-        projectName: "super-agent",
-        isCurrentWorkspace: false,
-      },
-    ]);
+    const onAgentInboxSessionChange = vi.fn();
+    const { sidebar, container } = makeSidebar(
+      [
+        { id: "project", timestamp: "2026-06-02T00:00:00.000Z", name: "Project chat" },
+        {
+          id: "sa-old",
+          timestamp: "2026-06-01T00:00:00.000Z",
+          name: "Old Inbox",
+          projectPath: "/Users/me/.pi/agent/super-agent",
+          projectName: "super-agent",
+          isCurrentWorkspace: false,
+        },
+        {
+          id: "sa-new",
+          timestamp: "2026-06-03T00:00:00.000Z",
+          name: "New Inbox",
+          projectPath: "/Users/me/.pi/agent/super-agent",
+          projectName: "super-agent",
+          isCurrentWorkspace: false,
+        },
+      ],
+      { onAgentInboxSessionChange },
+    );
 
     await sidebar.load();
 
-    const pinnedGroup = container.firstElementChild;
-    expect(pinnedGroup?.classList.contains("super-agent-pinned-group")).toBe(true);
-    expect(pinnedGroup?.querySelector(".project-header")?.textContent).toContain("Agent Inbox");
-    expect(pinnedGroup?.querySelector(".project-header")?.textContent).toContain("Pinned");
-    const pinnedSession = pinnedGroup?.querySelector(".session-item");
-    expect(pinnedSession?.dataset.sessionId).toBe("sa-new");
-    expect(pinnedSession?.textContent).toContain("Agent Inbox");
-    expect(container.querySelectorAll('.session-item[data-session-id="sa-new"]')).toHaveLength(1);
-    expect(container.querySelector('.session-item[data-session-id="sa-old"]')).toBeNull();
-
-    pinnedSession?.click();
-
-    expect(onSelect).toHaveBeenCalledWith(
+    expect(onAgentInboxSessionChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
         id: "sa-new",
         kind: "super-agent",
@@ -577,24 +652,33 @@ describe("SessionSidebar.render", () => {
         projectPath: "/Users/me/.pi/agent/super-agent",
       }),
     );
+    expect(container.querySelector(".super-agent-pinned-group")).toBeNull();
+    expect(container.querySelector('.session-item[data-session-id="sa-new"]')).toBeNull();
+    expect(container.querySelector('.session-item[data-session-id="sa-old"]')).toBeNull();
+    expect(container.querySelector('.session-item[data-session-id="project"]')).not.toBeNull();
   });
 
   it("hides Agent Inbox sessions when the setting is disabled", async () => {
     setSuperAgentEnabled(false);
-    const { sidebar, container } = makeSidebar([
-      { id: "project", timestamp: "2026-06-02T00:00:00.000Z", name: "Project chat" },
-      {
-        id: "sa",
-        timestamp: "2026-06-03T00:00:00.000Z",
-        name: "Inbox",
-        projectPath: "/Users/me/.pi/agent/super-agent",
-        projectName: "super-agent",
-        isCurrentWorkspace: false,
-      },
-    ]);
+    const onAgentInboxSessionChange = vi.fn();
+    const { sidebar, container } = makeSidebar(
+      [
+        { id: "project", timestamp: "2026-06-02T00:00:00.000Z", name: "Project chat" },
+        {
+          id: "sa",
+          timestamp: "2026-06-03T00:00:00.000Z",
+          name: "Inbox",
+          projectPath: "/Users/me/.pi/agent/super-agent",
+          projectName: "super-agent",
+          isCurrentWorkspace: false,
+        },
+      ],
+      { onAgentInboxSessionChange },
+    );
 
     await sidebar.load();
 
+    expect(onAgentInboxSessionChange).toHaveBeenLastCalledWith(null);
     expect(container.querySelector(".super-agent-pinned-group")).toBeNull();
     expect(container.querySelector('.session-item[data-session-id="sa"]')).toBeNull();
     expect(container.textContent).not.toContain("Agent Inbox");
@@ -610,8 +694,9 @@ describe("SessionSidebar.render", () => {
     sidebar.toggleArchived("s-arc-2");
     await sidebar.load();
 
-    const deleteAllBtn = container.querySelector(".archived-delete-all-btn");
+    const deleteAllBtn = container.querySelector(".archived-header .archived-delete-all-btn");
     expect(deleteAllBtn).toBeTruthy();
+    expect(container.querySelector(".sidebar-section-footer .archived-delete-all-btn")).toBeNull();
     control.deleteSessions.mockResolvedValueOnce({ deleted: ["s-arc-1", "s-arc-2"], errors: [] });
     deleteAllBtn.click();
 
@@ -691,5 +776,142 @@ describe("SessionSidebar.render", () => {
     expect(
       container.querySelector('.session-item[data-session-id="s-background"]').classList,
     ).toContain("unread");
+  });
+});
+
+describe("SessionSidebar.pinned", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setSuperAgentEnabled(false);
+  });
+
+  it("renders no PINNED section when nothing is pinned", async () => {
+    const { sidebar, container } = makeSidebar([
+      {
+        id: "s-1",
+        filePath: "/sessions/s-1.jsonl",
+        timestamp: new Date().toISOString(),
+        name: "Hello",
+      },
+    ]);
+    await sidebar.load();
+    expect(container.querySelector(".pinned-group")).toBeNull();
+  });
+
+  it("renders a PINNED section listing pinned workspace sessions", async () => {
+    const { sidebar, container } = makeSidebar([
+      {
+        id: "s-1",
+        filePath: "/sessions/s-1.jsonl",
+        timestamp: new Date().toISOString(),
+        name: "Hello",
+      },
+      {
+        id: "s-2",
+        filePath: "/sessions/s-2.jsonl",
+        timestamp: new Date().toISOString(),
+        name: "World",
+      },
+    ]);
+    await sidebar.load();
+    sidebar.pinnedStore.pinWorkspace("/ws-1", "/ws-1");
+    await sidebar.load();
+    const group = container.querySelector(".pinned-group");
+    expect(group).not.toBeNull();
+    expect(group.querySelector(".pinned-workspace-group")).not.toBeNull();
+    expect(group.querySelectorAll(".pinned-workspace-group .session-item")).toHaveLength(2);
+    expect(group.textContent).toContain("PINNED");
+  });
+
+  it("excludes workspace-pinned sessions from the regular project list", async () => {
+    const { sidebar, container } = makeSidebar([
+      {
+        id: "s-1",
+        filePath: "/sessions/s-1.jsonl",
+        timestamp: new Date().toISOString(),
+        name: "Hello",
+      },
+    ]);
+    await sidebar.load();
+    sidebar.pinnedStore.pinWorkspace("/ws-1", "/ws-1");
+    await sidebar.load();
+    // The pinned session appears under PINNED (inside a workspace-group).
+    expect(container.querySelectorAll(".pinned-group .session-item")).toHaveLength(1);
+    // And does NOT appear under PROJECTS.
+    expect(container.querySelectorAll(".projects-group .session-item")).toHaveLength(0);
+  });
+
+  it("renders the Unavailable sub-section for orphan pin records", async () => {
+    const { sidebar, container } = makeSidebar([
+      {
+        id: "s-1",
+        filePath: "/sessions/s-1.jsonl",
+        timestamp: new Date().toISOString(),
+        name: "Hello",
+      },
+    ]);
+    await sidebar.load();
+    // Pin a workspace and a session that don't exist in the loaded list.
+    sidebar.pinnedStore.pinWorkspace("/ghost-ws", "/ghost-ws");
+    sidebar.pinnedStore.pinSession("ghost-session");
+    await sidebar.load();
+    // Each orphan renders as a workspace-group with a .pinned-unavailable
+    // message + an Unpin button (buildSidebarWorkspaceGroup contract).
+    const unavailableRows = container.querySelectorAll(".pinned-unavailable");
+    expect(unavailableRows.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("clears an orphan pin via the Unavailable Unpin button", async () => {
+    const { sidebar, container } = makeSidebar([]);
+    await sidebar.load();
+    sidebar.pinnedStore.pinWorkspace("/ghost-ws", "/ghost-ws");
+    await sidebar.load();
+    // The orphan workspace-group renders an Unpin button alongside the
+    // .pinned-unavailable message.
+    const unpinBtn = Array.from(container.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes(t("sidebar.unpinWorkspace")),
+    );
+    expect(unpinBtn).toBeTruthy();
+    unpinBtn.click();
+    expect(sidebar.pinnedStore.isWorkspacePinned("/ghost-ws")).toBe(false);
+  });
+
+  it("renders the PINNED section between RECENT and PROJECTS", async () => {
+    const { sidebar, container } = makeSidebar([
+      {
+        id: "s-1",
+        filePath: "/sessions/s-1.jsonl",
+        timestamp: new Date().toISOString(),
+        name: "Hello",
+      },
+      {
+        id: "s-other",
+        filePath: "/sessions/s-other.jsonl",
+        timestamp: new Date().toISOString(),
+        name: "Other",
+        projectPath: "/other-ws",
+        projectName: "other-ws",
+        isCurrentWorkspace: false,
+      },
+    ]);
+    await sidebar.load();
+    // Touch the active session so it lands in the RECENT bucket.
+    sidebar.setActive("s-1");
+    // Pin only /ws-1; /other-ws stays in PROJECTS so the test can assert
+    // the PINNED section sits between RECENT and PROJECTS.
+    sidebar.pinnedStore.pinWorkspace("/ws-1", "/ws-1");
+    await sidebar.load();
+    // Sections now carry a `sidebar-section` prefix class, so check for
+    // membership instead of exact className[0].
+    const order = Array.from(container.children).map(
+      (node) =>
+        node.className.split(" ").find((c) => c.endsWith("-group")) || node.className.split(" ")[0],
+    );
+    const recentIdx = order.indexOf("recent-group");
+    const pinnedIdx = order.indexOf("pinned-group");
+    const projectIdx = order.indexOf("projects-group");
+    expect(recentIdx).toBeGreaterThanOrEqual(0);
+    expect(pinnedIdx).toBeGreaterThan(recentIdx);
+    expect(projectIdx).toBeGreaterThan(pinnedIdx);
   });
 });

@@ -19,19 +19,65 @@
     "openWorkspaceInNamedApp": "Abrir {path} en {app}",
     "openWorkspaceInAppAria": "Abrir espacio de trabajo en {app}",
     "openInApp": "Abrir en {app}",
-    "sideChat": "Chat lateral",
-    "quickChat": "Chat rápido",
-    "newSideChat": "Nuevo chat lateral"
+    "resourceManagement": "Gestión de recursos"
   },
   "git": {
     "currentBranch": "Rama git actual",
-    "branchName": "Rama: {name}"
+    "branchName": "Rama: {name}",
+    "panel": "Git",
+    "files": "Archivos",
+    "staged": "Preparado",
+    "changes": "Cambios",
+    "untracked": "Sin seguimiento",
+    "conflicted": "En conflicto",
+    "refresh": "Actualizar estado de Git",
+    "noStatus": "No se ha cargado el estado de Git",
+    "discardWarning": "Esta acción no se puede deshacer",
+    "writeUnavailable": "Autorización de escritura de Git no disponible",
+    "stage": "Preparar",
+    "unstage": "Quitar de preparación",
+    "discard": "Descartar cambios",
+    "aiCommitMessage": "Generar mensaje de commit con IA",
+    "commit": "Commit",
+    "stats": "+{additions} −{deletions} · Preparado {staged} · Cambios {changes} · Sin seguimiento {untracked}",
+    "summary": "{branch} · {upstream} · ↑{ahead} ↓{behind}",
+    "noUpstream": "No hay upstream configurado",
+    "confirmationRequired": "Este archivo tiene cambios preparados y no preparados. ¿Confirmar commit de todo el archivo?",
+    "discardConfirm": "¿Descartar cambios en {count} archivo(s)? Esto no se puede deshacer.",
+    "truncated": "{count} cambios más no mostrados",
+    "commitMessageLabel": "Mensaje de commit",
+    "cancel": "Cancelar",
+    "committing": "Commitiendo...",
+    "hookChangedTree": "Un hook de pre-commit modificó el contenido del commit; el commit se creó pero puede diferir de la instantánea preparada.",
+    "aiFailed": "La generación del mensaje de commit con IA falló. Todavía puedes escribir un mensaje manualmente.",
+    "commitInProgress": "Commit en progreso...",
+    "outcomeUnknown": "No se pudo determinar el resultado del commit. Verifica el estado del repositorio antes de reintentar.",
+    "diffOriginal": "Original",
+    "diffModified": "Modificado",
+    "diffEmpty": "No hay cambios para mostrar",
+    "comparison": {
+      "staged": "Preparado",
+      "changes": "Cambios",
+      "untracked": "Sin seguimiento"
+    },
+    "toggleChanges": "Mostrar u ocultar cambios de Git",
+    "closeChanges": "Cerrar cambios de Git",
+    "changesWithBranch": "Cambios de Git — {branch}",
+    "changesHeading": "Cambios"
   },
   "usage": {
     "contextTokens": "Contexto: {used}k / {limit}k tokens",
     "sessionCostTitle": "Costo de sesión",
     "contextTitle": "Uso del contexto",
-    "costSub": "{amount} (suscripción)"
+    "costSub": "{amount} (suscripción)",
+    "input": "input",
+    "output": "output",
+    "cache": "cache",
+    "costTitle": "costTitle",
+    "summary": "In {in} · Out {out} · Cache {cache}",
+    "inputSummary": "In {in}",
+    "outputSummary": "Out {out}",
+    "sessionUsageTitle": "Session tokens (input / output / cache)"
   },
   "sessionInfo": {
     "title": "Información de la sesión",
@@ -48,6 +94,7 @@
   "context": {
     "cached": "En caché",
     "input": "Entrada",
+    "output": "Salida",
     "available": "Disponible",
     "used": "{pct}% usado",
     "tooltip": "{label}: {tokens}"
@@ -83,7 +130,8 @@
     "expandAllTools": "Expandir todas las herramientas",
     "expandAllToolsDesc": "Expandir todas las tarjetas de herramientas",
     "collapseAllTools": "Colapsar todas las herramientas",
-    "collapseAllToolsDesc": "Colapsar todas las tarjetas de herramientas"
+    "collapseAllToolsDesc": "Colapsar todas las tarjetas de herramientas",
+    "compacting": "Compactando…"
   },
   "messages": {
     "attachedImage": "Imagen adjunta",
@@ -91,6 +139,7 @@
     "thinking": "Pensando",
     "copy": "Copiar",
     "copied": "¡Copiado!",
+    "scrollToBottom": "Scroll to latest message",
     "processDetails": "Detalles del proceso",
     "processStep": "{count} paso",
     "processSteps": "{count} pasos",
@@ -159,7 +208,8 @@
         "installWindows": "py -3 -m pip install \"markitdown[docx,pptx,xlsx,xls,outlook]\"",
         "remoteImageHidden": "Imagen remota oculta"
       },
-      "conflictMessage": "{name} fue modificado en disco. ¿Recargar o sobreescribir la versión del disco?"
+      "conflictMessage": "{name} fue modificado en disco. ¿Recargar o sobreescribir la versión del disco?",
+      "tabpanelLabel": "Vista previa de archivo"
     },
     "unsaved": {
       "title": "Cambios sin guardar",
@@ -168,7 +218,8 @@
       "save": "Guardar cambios",
       "discard": "Descartar",
       "cancel": "Cancelar"
-    }
+    },
+    "noChanges": "Sin cambios"
   },
   "dialogs": {
     "selectOption": "Selecciona una opción",
@@ -204,7 +255,40 @@
     "permissionDenied": "Permiso denegado en ~/.pi/agent/npm (verifica propietario/permisos).",
     "browseCountZero": "0 de {total}",
     "browseCountRange": "{start}–{end} de {total}",
-    "downloadsPerMonth": "{count}/mes"
+    "downloadsPerMonth": "{count}/mes",
+    "addPlugin": "Agregar plugin",
+    "managementUnavailable": "La gestión de paquetes no está disponible en este cliente.",
+    "noInstalled": "No hay paquetes instalados",
+    "noPackagesSummary": "No se ha configurado ningún paquete",
+    "enablePackage": "Habilitar paquete",
+    "disablePackage": "Deshabilitar paquete",
+    "notOnDisk": "No está en el disco",
+    "noResources": "Ninguno",
+    "resourceCount": "{count} {label}",
+    "scopeGlobal": "Global",
+    "scopeProject": "Proyecto",
+    "status": "Estado",
+    "version": "Versión",
+    "package": "Paquete",
+    "description": "Descripción",
+    "resources": "Recursos",
+    "installPath": "Ruta de instalación",
+    "cwd": "Directorio de trabajo",
+    "resolvedResources": "Recursos resueltos",
+    "update": "Actualizar",
+    "updateTip": "Actualiza este paquete a la última versión",
+    "updateMessage": "Se actualizó {source}.",
+    "remove": "Eliminar",
+    "removeTip": "Desinstala este paquete",
+    "removeMessage": "Se eliminó {source}.",
+    "refresh": "Actualizar",
+    "refreshTip": "Recarga la lista de paquetes",
+    "reloadAgent": "Recargar el agente",
+    "reloadAgentTip": "Reinicia la sesión activa para que este cambio tenga efecto",
+    "reloadAgentUnavailable": "No se puede recargar el agente en esta sesión.",
+    "reloadingAgent": "Recargando el agente…",
+    "packageEnabledMessage": "Se habilitó {source}.",
+    "packageDisabledMessage": "Se deshabilitó {source}."
   },
   "actions": {
     "retry": "Reintentar",
@@ -296,7 +380,9 @@
     "abortedByUser": "Cancelado por el usuario",
     "invalidJson": "JSON inválido: {detail}",
     "modelsMustBeObject": "models.json debe ser un objeto JSON.",
-    "providersMustBeObject": "'providers' debe ser un objeto."
+    "providersMustBeObject": "'providers' debe ser un objeto.",
+    "compactionFailed": "Context compaction failed.",
+    "compactionFailedDetail": "Context compaction failed: {error}"
   },
   "onboarding": {
     "openProject": "Abre un proyecto para comenzar a chatear.",
@@ -412,7 +498,19 @@
     "deleteSessionRunning": "No se puede eliminar una sesión en ejecución",
     "archiveDisabledActive": "No se puede archivar la sesión activa",
     "archiveDisabledStreaming": "No se puede archivar una sesión en streaming",
-    "archiveDisabledRunning": "No se puede archivar una sesión en ejecución"
+    "archiveDisabledRunning": "No se puede archivar una sesión en ejecución",
+    "favourite": "Favorito",
+    "unfavourite": "Quitar favorito",
+    "archiveAll": "Archivar todas las sesiones",
+    "pin": "Anclar",
+    "unpin": "Desanclar",
+    "sessionActions": "Acciones de sesión",
+    "renameErrorGeneric": "No se pudo cambiar el nombre de la sesión.",
+    "sessionList": "Sesiones",
+    "noSavedSessions": "No hay sesiones guardadas",
+    "searchTasks": "Tareas",
+    "recentTasks": "Tareas recientes",
+    "messageMatch": "Coincidencia de mensaje"
   },
   "updater": {
     "update": "Actualizar",
@@ -443,7 +541,16 @@
     "pubkeyError": "Falta la clave pública del actualizador o la firma del paquete es inválida. Consulta docs/AUTO_UPDATER.md.",
     "unknownError": "Error desconocido del actualizador",
     "versionLabel": "Picot {version}",
-    "versionLabelFrom": "Picot {version} (desde {current})"
+    "versionLabelFrom": "Picot {version} (desde {current})",
+    "clickToCheck": "Haz clic para comprobar",
+    "upToDate": "Actualizado",
+    "checkFailed": "Error al comprobar",
+    "preparingDownload": "Preparando descarga…",
+    "installFailed": "Error de instalación",
+    "tryAgain": "Intentar de nuevo",
+    "installedRelaunching": "Instalado. Reiniciando…",
+    "relaunching": "Reiniciando…",
+    "versionAvailable": "{version} disponible"
   },
   "voice": {
     "voiceInput": "Entrada de voz",
@@ -582,8 +689,57 @@
       "saveFailed": "Error al guardar la configuración de habilidades.",
       "rescanFailed": "Error al reescanear habilidades.",
       "ambiguousRuleTarget": "Este objetivo corresponde a múltiples raíces; edita settings.json manualmente para cambiarlo.",
-      "scopeSummary": "{total} habilidades · {groups} grupos"
-    }
+      "scopeSummary": "{total} habilidades · {groups} grupos",
+      "discovered": "Discovered",
+      "install": "Install",
+      "packages": "Packages",
+      "sectionsAriaLabel": "Skills sections"
+    },
+    "installSkills": {
+      "title": "Install skills",
+      "description": "Link skills from a local folder. No files are copied or changed.",
+      "chooseFolder": "Choose folder",
+      "scanning": "Scanning skills…",
+      "scanFailed": "Failed to scan the selected folder.",
+      "global": "Global",
+      "project": "Current project",
+      "projectUntrusted": "This project is not trusted. Install to the current project is unavailable.",
+      "review": "Review installation",
+      "confirmation": "Install {count} selected skills to {scope}?",
+      "confirm": "Install selected skills",
+      "cancel": "Cancel",
+      "installing": "Installing…",
+      "installFailed": "Failed to install selected skills.",
+      "complete": "Installed {added} entries; {skipped} already configured.",
+      "restartRequired": "Saved. Start a new session or restart Pi for the change to take effect.",
+      "confirmationHeading": "Confirm skill installation",
+      "skill": "Skill",
+      "group": "Group"
+    },
+    "packageSkills": {
+      "title": "Packages skills",
+      "description": "Bundled skill candidates from configured Pi packages. These are read-only candidates; effective enable/disable state is computed by Pi and is not shown here.",
+      "bundledCandidates": "Bundled candidates",
+      "refresh": "Refresh",
+      "global": "Global",
+      "project": "Current project",
+      "loading": "Loading package skills…",
+      "retry": "Retry",
+      "empty": "No configured packages in this scope.",
+      "loadFailed": "Failed to load package skills.",
+      "projectUntrusted": "This project is not trusted. Project package paths are not shown.",
+      "notInstalled": "Not installed",
+      "package": "Package",
+      "canonicalPath": "Canonical path",
+      "candidateCount": "{count} candidates",
+      "scopeSummary": "{count} packages",
+      "enableAll": "Enable all"
+    },
+    "installedPackages": "Paquetes instalados",
+    "installedHelp": "Gestiona los paquetes de extensión configurados para esta instalación: habilita, deshabilita, actualiza o elimina.",
+    "copyConfigPath": "Copiar ruta",
+    "configPathCopied": "Copiado",
+    "configPathCopyFailed": "Error al copiar"
   },
   "lanQr": {
     "modalAriaLabel": "Código QR móvil",
@@ -661,43 +817,17 @@
     "model": "modelo",
     "compact": "Compactar",
     "compactTitle": "El contexto supera el 80% — compacta para ahorrar tokens",
-    "qrUnavailable": "Código QR no disponible"
+    "qrUnavailable": "Código QR no disponible",
+    "toggleContextControls": "Toggle context controls"
   },
   "browse": {
     "openExternalPrompt": "Abrir este enlace en una nueva pestaña:"
-  },
-  "ephemeral": {
-    "placeholder": "Pregunta lo que quieras…",
-    "send": "Enviar",
-    "abort": "Cancelar",
-    "newChat": "Nuevo chat",
-    "startingSideChat": "Iniciando chat lateral…",
-    "startingQuickChat": "Iniciando chat rápido…",
-    "tokens": "tokens",
-    "sideChat": "Chat lateral",
-    "sideChatLimit": "Límite de chat lateral alcanzado",
-    "quickChat": "Chat rápido",
-    "minimize": "Minimizar",
-    "close": "Cerrar",
-    "confirmDiscard": "Este chat temporal no se guardará. ¿Descartar?",
-    "confirmCloseSummary": "¿Cerrar y descartar archivos sin guardar y chats temporales?",
-    "generating": "Generando",
-    "unread": "No leído",
-    "resize": "Redimensionar chat rápido",
-    "statusReady": "Listo",
-    "statusStreaming": "Generando",
-    "statusError": "Error",
-    "statusDisconnected": "Desconectado"
   },
   "fileMention": {
     "listLabel": "Archivos"
   },
   "workspace": {
-    "focus": "Entrar en modo de enfoque",
-    "focusTitle": "Espacio de trabajo",
-    "back": "Atrás",
-    "newTask": "Nueva tarea",
-    "showMore": "Mostrar más"
+    "back": "Atrás"
   },
   "migrated": {
     "bootstrap": {
@@ -732,7 +862,8 @@
         "thinkingEffortOffClickToCycleReasoning": "Esfuerzo de razonamiento: apagado. Haz clic para cambiar la profundidad de razonamiento.",
         "receiveBetaUpdates": "Recibir actualizaciones beta",
         "searchTasks": "Buscar tareas",
-        "searchResults": "Resultados de búsqueda"
+        "searchResults": "Resultados de búsqueda",
+        "openFilesPanel": "Abrir panel de archivos — {path}"
       },
       "placeholder": {
         "typeAMessageOrUseToCall": "Mensaje… Escribe / para comandos, @ para archivos",
@@ -869,5 +1000,84 @@
         }
       }
     }
+  },
+  "inbox": {
+    "startAutomatically": "Iniciar automáticamente",
+    "launchOnOpen": "Abrir la bandeja del agente al iniciar Picot",
+    "beta": "Beta",
+    "telegram": "Telegram",
+    "tokenHelpPre": "Pega un token de bot de Telegram de",
+    "tokenHelpMid": ". Picot detectará tu DM de Telegram automáticamente después de enviar",
+    "tokenHelpPost": "al bot.",
+    "safety": "Los mensajes de Telegram entran primero en la bandeja del agente. Picot solo despacha al agente del proyecto tras una aprobación local.",
+    "botToken": "Token del bot",
+    "tokenPlaceholder": "123456:ABCDEF…",
+    "connectTelegram": "Conectar Telegram",
+    "reconnectTelegram": "Reconectar Telegram",
+    "telegramDoctor": "Diagnóstico de Telegram",
+    "runDoctor": "Ejecutar diagnóstico",
+    "notCheckedYet": "Aún no se ha comprobado.",
+    "advancedRawConfig": "Configuración raw avanzada",
+    "advancedHelpPre": "Configuración interna guardada en",
+    "advancedHelpPost": ". Normalmente no hace falta editarla a mano.",
+    "chatConfigPath": "~/.pi/agent/chat/config.json",
+    "saveRawConfig": "Guardar configuración raw",
+    "invalidJson": "JSON no válido",
+    "savedRawConfig": "Configuración raw guardada.",
+    "pasteTokenFirst": "Pega primero el token del bot de Telegram.",
+    "validatingToken": "Validando el token del bot de Telegram…",
+    "botConnectedSendStart": "Bot conectado. Envía /start al bot en Telegram para terminar la configuración.",
+    "telegramConnected": "Telegram conectado. Solo el usuario de DM detectado está autorizado.",
+    "setupCanceled": "Configuración de Telegram cancelada.",
+    "disconnectConfirm": "¿Desconectar Telegram de Picot?",
+    "disconnected": "Telegram desconectado.",
+    "ready": "Listo",
+    "needsAttention": "Requiere atención",
+    "notReady": "No listo",
+    "notConnected": "Telegram no está conectado.",
+    "detectedDm": "DM detectado",
+    "authorizedDm": "DM autorizado: {user}",
+    "internalId": "ID interno:",
+    "disconnect": "Desconectar",
+    "waitingForDm": "Esperando tu DM de Telegram…",
+    "openBot": "Abre {bot} en Telegram.",
+    "openTheBot": "Abre el bot en Telegram.",
+    "sendStartStep": "Envía /start en el chat privado.",
+    "openTelegram": "Abrir Telegram",
+    "tasks": "Tareas",
+    "closeActivity": "Cerrar panel de actividad",
+    "filterAll": "Todas",
+    "filterPending": "Pendientes",
+    "filterRunning": "En curso",
+    "filterDone": "Hechas",
+    "connecting": "Conectando…",
+    "noTasks": "No hay tareas…",
+    "noTasksWithStatus": "No hay tareas con estado \"{status}\"…",
+    "approveCount": "Aprobar {count}",
+    "clearDone": "Borrar hechas",
+    "promptAi": "Pedir a la IA",
+    "approve": "Aprobar",
+    "target": "Destino: {name}",
+    "viewSession": "Ver sesión →",
+    "waitingForSession": "Esperando a que arranque la sesión del agente…",
+    "forceCancel": "Forzar cancelación",
+    "waitingForInput": "Esperando entrada.",
+    "project": "Proyecto: {name}",
+    "retry": "Reintentar",
+    "dismiss": "Descartar",
+    "clear": "Borrar",
+    "chooseProjectWhenCreating": "Elige un proyecto al crear esta tarea.",
+    "untitled": "(sin título)",
+    "listening": "Escuchando",
+    "taskBoard": "Tablero de tareas",
+    "toggleTaskBoard": "Mostrar u ocultar el tablero de tareas",
+    "telegramNotConfigured": "Telegram no está configurado",
+    "telegramSettings": "Ajustes de Telegram",
+    "source": "Origen: {channel}",
+    "history": "Historial",
+    "chooseProject": "Elige un proyecto…",
+    "chooseProjectBeforeApproval": "Elige un proyecto antes de aprobar.",
+    "loadingProjects": "Cargando proyectos…",
+    "projectRunning": "{name} · en ejecución"
   }
 }

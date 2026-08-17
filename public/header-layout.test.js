@@ -17,10 +17,10 @@ function ruleBody(selector) {
 }
 
 describe("workspace header layout", () => {
-  test("keeps left metadata and right file controls in separate grid tracks", () => {
-    expect(ruleBody(".header")).toContain("display: grid");
-    expect(ruleBody(".header")).toContain("grid-template-columns: minmax(0, 1fr) auto");
-    expect(ruleBody(".header-left")).toContain("overflow: hidden");
+  test("keeps left metadata fixed and right file controls scrolling independently", () => {
+    expect(ruleBody(".header")).toContain("display: flex");
+    expect(ruleBody(".header-left")).toContain("flex: 0 0 auto");
+    expect(ruleBody(".header-left")).toContain("min-width: max-content");
     expect(styleCss).toMatch(/\.header-right\s*\{[^}]*justify-content:\s*flex-end/s);
   });
 });

@@ -12,6 +12,7 @@
  * The host page should listen: el.addEventListener('sa-dispatch', e => ...)
  */
 
+import { onLocaleChange, t } from "../i18n.js";
 import {
   ACTIVE_TASK_STATUSES,
   markTaskFinished,
@@ -33,6 +34,7 @@ class SuperAgentRuntime extends HTMLElement {
     this._projectsLoadedOnce = false;
 
     this._render();
+    this._unsubscribeLocale = onLocaleChange(() => this._renderAll());
     this._cleanupResizablePanel = setupResizablePanel(this, {
       storageKey: "pi-studio-runtime-panel-width",
       defaultWidth: 360,
@@ -50,6 +52,7 @@ class SuperAgentRuntime extends HTMLElement {
     clearInterval(this._pollInterval);
     clearTimeout(this._retryTimer);
     this._cleanupResizablePanel?.();
+    this._unsubscribeLocale?.();
     document.removeEventListener("sa-open-runtime", this._handleOpenRuntime);
     document.removeEventListener("keydown", this._handleGlobalKeyDown);
   }
@@ -59,8 +62,8 @@ class SuperAgentRuntime extends HTMLElement {
   _render() {
     this.innerHTML = `
       <div class="runtime-header app-side-panel-header" id="runtime-header">
-        <span class="runtime-title">Tasks</span>
-        <button class="icon-btn app-side-panel-close-btn" data-collapse-btn title="Close" aria-label="Close activity panel">
+        <span class="runtime-title" data-i18n="inbox.tasks">Tasks</span>
+        <button class="icon-btn app-side-panel-close-btn" data-collapse-btn title="Close" data-i18n-title="migrated.index.title.close" aria-label="Close activity panel" data-i18n-aria-label="inbox.closeActivity">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"/>
@@ -69,10 +72,10 @@ class SuperAgentRuntime extends HTMLElement {
         </button>
       </div>
       <div class="runtime-filters" data-filters>
-        <button class="runtime-filter active" data-filter="all">All</button>
-        <button class="runtime-filter" data-filter="pending">Pending <span data-pending-count>0</span></button>
-        <button class="runtime-filter" data-filter="running">Running <span data-running-count>0</span></button>
-        <button class="runtime-filter" data-filter="done">Done <span data-done-count>0</span></button>
+        <button class="runtime-filter active" data-filter="all"><span data-i18n="inbox.filterAll">All</span></button>
+        <button class="runtime-filter" data-filter="pending"><span data-i18n="inbox.filterPending">Pending</span> <span data-pending-count>0</span></button>
+        <button class="runtime-filter" data-filter="running"><span data-i18n="inbox.filterRunning">Running</span> <span data-running-count>0</span></button>
+        <button class="runtime-filter" data-filter="done"><span data-i18n="inbox.filterDone">Done</span> <span data-done-count>0</span></button>
       </div>
       <div class="runtime-task-list" data-task-list></div>
       <div class="runtime-bulk-actions" data-bulk-actions></div>
@@ -120,7 +123,9 @@ class SuperAgentRuntime extends HTMLElement {
   _openPanel(filter = null) {
     document.body.classList.add("super-agent-active");
     document.getElementById("super-agent-chat-header")?.classList.remove("hidden");
-    document.querySelector(".super-agent-pinned-group .session-item")?.click();
+    document.dispatchEvent(
+      new CustomEvent("sa-open-agent-inbox", { detail: { openRuntimePanel: true } }),
+    );
     document.getElementById("super-agent-sidebar-entry")?.classList.add("active");
     this.classList.remove("collapsed");
     localStorage.setItem("sa-runtime-collapsed", "0");
@@ -284,7 +289,9 @@ class SuperAgentRuntime extends HTMLElement {
     const done = this._tasks.filter((t) => t.status === "done").length;
 
     const q = (sel) => this.querySelector(sel);
-    q("[data-pending-count]").textContent = pending;
+    const pendingEl = q("[data-pending-count]");
+    if (!pendingEl) return;
+    pendingEl.textContent = pending;
     q("[data-running-count]").textContent = running;
     q("[data-done-count]").textContent = done;
 
@@ -306,9 +313,7 @@ class SuperAgentRuntime extends HTMLElement {
     if (!list) return;
 
     if (!this._hasLoadedOnce) {
-      list.innerHTML = `<div style="padding:20px 0;text-align:center;font-size:12px;color:var(--text-dim)">
-        Connecting…
-      </div>`;
+      list.innerHTML = `<div style="padding:20px 0;text-align:center;font-size:12px;color:var(--text-dim)">${esc(t("inbox.connecting"))}</div>`;
       return;
     }
 
@@ -321,9 +326,11 @@ class SuperAgentRuntime extends HTMLElement {
     filtered = [...filtered].sort((a, b) => (order[a.status] ?? 4) - (order[b.status] ?? 4));
 
     if (filtered.length === 0) {
-      list.innerHTML = `<div style="padding:20px 0;text-align:center;font-size:12px;color:var(--text-dim)">
-        No tasks${this._filter !== "all" ? ` with status "${this._filter}"` : ""}…
-      </div>`;
+      const empty =
+        this._filter !== "all"
+          ? t("inbox.noTasksWithStatus", { status: this._filter })
+          : t("inbox.noTasks");
+      list.innerHTML = `<div style="padding:20px 0;text-align:center;font-size:12px;color:var(--text-dim)">${esc(empty)}</div>`;
       return;
     }
 
@@ -339,8 +346,8 @@ class SuperAgentRuntime extends HTMLElement {
     ).length;
     const done = this._tasks.filter((task) => task.status === "done").length;
     container.innerHTML = `
-      <button class="sa-btn sa-btn-approve" data-action="approve-all" type="button" ${ready === 0 ? "disabled" : ""}>Approve ${ready}</button>
-      <button class="sa-btn sa-btn-dismiss" data-action="clear-done" type="button" ${done === 0 ? "disabled" : ""}>Clear Done</button>
+      <button class="sa-btn sa-btn-approve" data-action="approve-all" type="button" ${ready === 0 ? "disabled" : ""}>${esc(t("inbox.approveCount", { count: ready }))}</button>
+      <button class="sa-btn sa-btn-dismiss" data-action="clear-done" type="button" ${done === 0 ? "disabled" : ""}>${esc(t("inbox.clearDone"))}</button>
     `;
     container.querySelector('[data-action="approve-all"]')?.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -368,27 +375,27 @@ class SuperAgentRuntime extends HTMLElement {
         body += this._projectPickerHtml(task);
         body += `
           <div class="runtime-approve-row">
-            <button class="sa-btn" data-action="prompt-task" data-task-id="${task.id}">Prompt AI</button>
+            <button class="sa-btn" data-action="prompt-task" data-task-id="${task.id}">${esc(t("inbox.promptAi"))}</button>
             ${
               hasTargetProject
-                ? `<button class="sa-btn sa-btn-approve" data-action="approve" data-task-id="${task.id}">Approve</button>`
+                ? `<button class="sa-btn sa-btn-approve" data-action="approve" data-task-id="${task.id}">${esc(t("inbox.approve"))}</button>`
                 : ""
             }
             <button class="sa-btn sa-btn-dismiss" data-action="dismiss" data-task-id="${task.id}">✕</button>
           </div>`;
       } else if (task.status === "done" || task.status === "running") {
         if (hasTargetProject) {
-          body += `<div class="runtime-task-target">Target: <strong>${esc(projectName)}</strong></div>`;
+          body += `<div class="runtime-task-target">${esc(t("inbox.target", { name: projectName }))}</div>`;
         }
         if (task.dispatch?.childSessionId || task.dispatch?.childPort) {
           const canOpen = Boolean(task.dispatch?.childSessionId);
           body += `<div class="runtime-approve-row">
-            <button class="sa-btn" data-action="view-session" data-task-id="${escAttr(task.id)}" ${canOpen ? "" : 'disabled title="Waiting for the agent session to start…"'}>View Session →</button>
-            ${task.status === "running" ? `<button class="sa-btn sa-btn-dismiss" data-action="force-cancel" data-task-id="${escAttr(task.id)}">Force Cancel</button>` : ""}
+            <button class="sa-btn" data-action="view-session" data-task-id="${escAttr(task.id)}" ${canOpen ? "" : `disabled title="${escAttr(t("inbox.waitingForSession"))}"`}>${esc(t("inbox.viewSession"))}</button>
+            ${task.status === "running" ? `<button class="sa-btn sa-btn-dismiss" data-action="force-cancel" data-task-id="${escAttr(task.id)}">${esc(t("inbox.forceCancel"))}</button>` : ""}
           </div>`;
         } else if (task.status === "running") {
           body += `<div class="runtime-approve-row">
-            <button class="sa-btn sa-btn-dismiss" data-action="force-cancel" data-task-id="${escAttr(task.id)}">Force Cancel</button>
+            <button class="sa-btn sa-btn-dismiss" data-action="force-cancel" data-task-id="${escAttr(task.id)}">${esc(t("inbox.forceCancel"))}</button>
           </div>`;
         }
       } else if (
@@ -396,19 +403,19 @@ class SuperAgentRuntime extends HTMLElement {
         task.status === "blocked" ||
         task.status === "needs_input"
       ) {
-        body += `<div class="runtime-task-error">${esc(task.result?.failReason || task.failReason || "Waiting for input.")}</div>`;
+        body += `<div class="runtime-task-error">${esc(task.result?.failReason || task.failReason || t("inbox.waitingForInput"))}</div>`;
         if (hasTargetProject) {
-          body += `<div class="runtime-task-target">Project: <strong>${esc(projectName)}</strong></div>`;
+          body += `<div class="runtime-task-target">${esc(t("inbox.project", { name: projectName }))}</div>`;
           body += `
             <div class="runtime-approve-row">
-              <button class="sa-btn sa-btn-approve" data-action="retry" data-task-id="${task.id}">Retry</button>
-              <button class="sa-btn sa-btn-dismiss" data-action="dismiss" data-task-id="${task.id}">Dismiss</button>
+              <button class="sa-btn sa-btn-approve" data-action="retry" data-task-id="${task.id}">${esc(t("inbox.retry"))}</button>
+              <button class="sa-btn sa-btn-dismiss" data-action="dismiss" data-task-id="${task.id}">${esc(t("inbox.dismiss"))}</button>
             </div>`;
         } else {
           body += `
-            <div class="runtime-task-missing-target">Choose a project when creating this task.</div>
+            <div class="runtime-task-missing-target">${esc(t("inbox.chooseProjectWhenCreating"))}</div>
             <div class="runtime-approve-row">
-              <button class="sa-btn sa-btn-dismiss" data-action="dismiss" data-task-id="${task.id}">Dismiss</button>
+              <button class="sa-btn sa-btn-dismiss" data-action="dismiss" data-task-id="${task.id}">${esc(t("inbox.dismiss"))}</button>
             </div>`;
         }
       }
@@ -423,7 +430,7 @@ class SuperAgentRuntime extends HTMLElement {
       data-task-id="${task.id}" role="button" tabindex="0" aria-expanded="${isExpanded}">
       <div class="runtime-task-header">
         <span class="runtime-status-dot"></span>
-        <span class="runtime-task-title">${esc(task.title || "(untitled)")}</span>
+        <span class="runtime-task-title">${esc(task.title || t("inbox.untitled"))}</span>
         ${this._quickActionsHtml(task)}
         <span class="runtime-task-expand-icon" aria-hidden="true"></span>
       </div>
@@ -435,19 +442,19 @@ class SuperAgentRuntime extends HTMLElement {
     const actions = [];
     if (task.status === "pending") {
       actions.push(
-        `<button class="sa-btn" data-action="prompt-task" data-task-id="${escAttr(task.id)}" type="button">Prompt AI</button>`,
+        `<button class="sa-btn" data-action="prompt-task" data-task-id="${escAttr(task.id)}" type="button">${esc(t("inbox.promptAi"))}</button>`,
       );
       if (isDispatchableProjectPath(task.targetProject)) {
         actions.push(
-          `<button class="sa-btn sa-btn-approve" data-action="approve" data-task-id="${escAttr(task.id)}" type="button">Approve</button>`,
+          `<button class="sa-btn sa-btn-approve" data-action="approve" data-task-id="${escAttr(task.id)}" type="button">${esc(t("inbox.approve"))}</button>`,
         );
       }
       actions.push(
-        `<button class="sa-btn sa-btn-dismiss" data-action="dismiss" data-task-id="${escAttr(task.id)}" type="button">Dismiss</button>`,
+        `<button class="sa-btn sa-btn-dismiss" data-action="dismiss" data-task-id="${escAttr(task.id)}" type="button">${esc(t("inbox.dismiss"))}</button>`,
       );
     } else if (task.status === "done") {
       actions.push(
-        `<button class="sa-btn sa-btn-dismiss" data-action="dismiss" data-task-id="${escAttr(task.id)}" type="button">Clear</button>`,
+        `<button class="sa-btn sa-btn-dismiss" data-action="dismiss" data-task-id="${escAttr(task.id)}" type="button">${esc(t("inbox.clear"))}</button>`,
       );
     }
     if (actions.length === 0) return "";
@@ -471,7 +478,7 @@ class SuperAgentRuntime extends HTMLElement {
         </div>`
       : "";
     return `<div class="runtime-task-history">
-      <button class="sa-btn" data-action="toggle-history" data-task-id="${escAttr(task.id)}" type="button">History</button>
+      <button class="sa-btn" data-action="toggle-history" data-task-id="${escAttr(task.id)}" type="button">${esc(t("inbox.history"))}</button>
       ${items}
     </div>`;
   }
@@ -487,21 +494,24 @@ class SuperAgentRuntime extends HTMLElement {
       });
     }
     const options = [
-      `<option value="">Choose a project…</option>`,
+      `<option value="">${esc(t("inbox.chooseProject"))}</option>`,
       ...projectOptions.map((project) => {
         const selected = project.cwd === targetProject ? " selected" : "";
-        const status = project.status === "running" ? " · running" : "";
-        return `<option value="${escAttr(project.cwd)}"${selected}>${esc(project.name || project.cwd)}${status}</option>`;
+        const label =
+          project.status === "running"
+            ? t("inbox.projectRunning", { name: project.name || project.cwd })
+            : project.name || project.cwd;
+        return `<option value="${escAttr(project.cwd)}"${selected}>${esc(label)}</option>`;
       }),
     ].join("");
     const hint = targetProject
-      ? `Project: ${esc(targetProject.split("/").pop() || targetProject)}`
+      ? t("inbox.project", { name: targetProject.split("/").pop() || targetProject })
       : this._projectsLoadedOnce
-        ? "Choose a project before approval."
-        : "Loading projects…";
+        ? t("inbox.chooseProjectBeforeApproval")
+        : t("inbox.loadingProjects");
     return `
       <label class="runtime-project-picker">
-        <span>${hint}</span>
+        <span>${esc(hint)}</span>
         <select class="runtime-project-select" data-action="select-project" data-task-id="${escAttr(task.id)}">
           ${options}
         </select>
@@ -584,7 +594,7 @@ function isDispatchableProjectPath(path) {
 
 function sourceHtml(task) {
   if (!task.source || task.source.channel === "local") return "";
-  return `<div class="runtime-task-source">Source: ${esc(task.source.channel)}</div>`;
+  return `<div class="runtime-task-source">${esc(t("inbox.source", { channel: task.source.channel }))}</div>`;
 }
 
 function formatTaskDescription(description) {

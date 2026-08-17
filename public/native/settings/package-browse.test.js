@@ -1,5 +1,10 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { initI18n } from "../../i18n.js";
 import { setupPackageBrowse } from "./package-browse.js";
+
+const enMessages = JSON.parse(readFileSync(join(process.cwd(), "public/locales/en.json"), "utf8"));
 
 function renderPackageBrowseDom() {
   document.body.innerHTML = `
@@ -18,10 +23,15 @@ function renderPackageBrowseDom() {
 function mockCatalog(packages) {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ packages, totalPages: 1 }),
-    })),
+    vi.fn(async (url) => {
+      if (String(url).includes("/locales/")) {
+        return { ok: true, json: async () => enMessages };
+      }
+      return {
+        ok: true,
+        json: async () => ({ packages, totalPages: 1 }),
+      };
+    }),
   );
 }
 
@@ -30,7 +40,14 @@ function packageRows() {
 }
 
 describe("package browser installed filter", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      if (String(input).includes("/locales/")) {
+        return { ok: true, json: async () => enMessages };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    await initI18n();
     renderPackageBrowseDom();
   });
 

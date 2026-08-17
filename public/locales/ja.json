@@ -19,19 +19,65 @@
     "openWorkspaceInNamedApp": "{app}で{path}を開く",
     "openWorkspaceInAppAria": "{app}でワークスペースを開く",
     "openInApp": "{app}で開く",
-    "sideChat": "サイドチャット",
-    "quickChat": "クイックチャット",
-    "newSideChat": "新しいサイドチャット"
+    "resourceManagement": "リソース管理"
   },
   "git": {
     "currentBranch": "現在のGitブランチ",
-    "branchName": "ブランチ：{name}"
+    "branchName": "ブランチ：{name}",
+    "panel": "Git",
+    "files": "ファイル",
+    "staged": "ステージ済み",
+    "changes": "変更",
+    "untracked": "未追跡",
+    "conflicted": "競合",
+    "refresh": "Git状態を更新",
+    "noStatus": "Gitステータスが読み込まれていません",
+    "discardWarning": "この操作は元に戻せません",
+    "writeUnavailable": "Git書き込み認証が利用できません",
+    "stage": "ステージ",
+    "unstage": "ステージ解除",
+    "discard": "変更を破棄",
+    "aiCommitMessage": "AIコミットメッセージを生成",
+    "commit": "コミット",
+    "stats": "+{additions} −{deletions} · ステージ済み {staged} · 変更 {changes} · 未追跡 {untracked}",
+    "summary": "{branch} · {upstream} · ↑{ahead} ↓{behind}",
+    "noUpstream": "アップストリームが設定されていません",
+    "confirmationRequired": "このファイルにはステージ済みと未ステージの変更があります。ファイル全体のコミットを確認しますか？",
+    "discardConfirm": "{count} 個のファイルの変更を破棄しますか？この操作は元に戻せません。",
+    "truncated": "さらに {count} 件の変更は表示されていません",
+    "commitMessageLabel": "コミットメッセージ",
+    "cancel": "キャンセル",
+    "committing": "コミット中...",
+    "hookChangedTree": "pre-commitフックがコミット内容を変更しました。コミットは作成されましたが、ステージされたスナップショットと異なる可能性があります。",
+    "aiFailed": "AIコミットメッセージの生成に失敗しました。手動でコミットメッセージを入力できます。",
+    "commitInProgress": "コミット進行中...",
+    "outcomeUnknown": "コミット結果を確定できませんでした。再試行前にリポジトリの状態を確認してください。",
+    "diffOriginal": "オリジナル",
+    "diffModified": "変更後",
+    "diffEmpty": "表示する変更はありません",
+    "comparison": {
+      "staged": "ステージ済み",
+      "changes": "変更",
+      "untracked": "未追跡"
+    },
+    "toggleChanges": "Git の変更を切り替え",
+    "closeChanges": "Git の変更を閉じる",
+    "changesWithBranch": "Git の変更 — {branch}",
+    "changesHeading": "変更"
   },
   "usage": {
     "contextTokens": "コンテキスト：{used}k / {limit}k トークン",
     "sessionCostTitle": "セッションコスト",
     "contextTitle": "コンテキスト使用量",
-    "costSub": "{amount}（サブスク）"
+    "costSub": "{amount}（サブスク）",
+    "input": "input",
+    "output": "output",
+    "cache": "cache",
+    "costTitle": "costTitle",
+    "summary": "In {in} · Out {out} · Cache {cache}",
+    "inputSummary": "In {in}",
+    "outputSummary": "Out {out}",
+    "sessionUsageTitle": "Session tokens (input / output / cache)"
   },
   "sessionInfo": {
     "title": "セッション情報",
@@ -48,6 +94,7 @@
   "context": {
     "cached": "キャッシュ済み",
     "input": "入力",
+    "output": "出力",
     "available": "利用可能",
     "used": "{pct}% 使用中",
     "tooltip": "{label}：{tokens}"
@@ -83,7 +130,8 @@
     "expandAllTools": "すべてのツールを展開",
     "expandAllToolsDesc": "すべてのツールカードを展開する",
     "collapseAllTools": "すべてのツールを折りたたむ",
-    "collapseAllToolsDesc": "すべてのツールカードを折りたたむ"
+    "collapseAllToolsDesc": "すべてのツールカードを折りたたむ",
+    "compacting": "コンパクト中…"
   },
   "messages": {
     "attachedImage": "添付画像",
@@ -91,6 +139,7 @@
     "thinking": "考え中",
     "copy": "コピー",
     "copied": "コピーしました！",
+    "scrollToBottom": "Scroll to latest message",
     "processDetails": "処理の詳細",
     "processStep": "{count} ステップ",
     "processSteps": "{count} ステップ",
@@ -159,7 +208,8 @@
         "installWindows": "py -3 -m pip install \"markitdown[docx,pptx,xlsx,xls,outlook]\"",
         "remoteImageHidden": "リモート画像は非表示です"
       },
-      "conflictMessage": "{name}がディスク上で変更されました。再読み込みしますか、それともディスクバージョンを上書きしますか？"
+      "conflictMessage": "{name}がディスク上で変更されました。再読み込みしますか、それともディスクバージョンを上書きしますか？",
+      "tabpanelLabel": "ファイルプレビュー"
     },
     "unsaved": {
       "title": "未保存の変更",
@@ -168,7 +218,8 @@
       "save": "変更を保存",
       "discard": "破棄",
       "cancel": "キャンセル"
-    }
+    },
+    "noChanges": "変更はありません"
   },
   "dialogs": {
     "selectOption": "オプションを選択",
@@ -204,7 +255,40 @@
     "permissionDenied": "~/.pi/agent/npmの権限が拒否されました（所有者/権限を確認してください）。",
     "browseCountZero": "0 / 全{total}件",
     "browseCountRange": "{start}–{end} / 全{total}件",
-    "downloadsPerMonth": "{count}/月"
+    "downloadsPerMonth": "{count}/月",
+    "addPlugin": "プラグインを追加",
+    "managementUnavailable": "このクライアントではパッケージ管理を利用できません。",
+    "noInstalled": "インストールされたパッケージはありません",
+    "noPackagesSummary": "パッケージが設定されていません",
+    "enablePackage": "パッケージを有効化",
+    "disablePackage": "パッケージを無効化",
+    "notOnDisk": "ディスク上にありません",
+    "noResources": "なし",
+    "resourceCount": "{count} {label}",
+    "scopeGlobal": "グローバル",
+    "scopeProject": "プロジェクト",
+    "status": "ステータス",
+    "version": "バージョン",
+    "package": "パッケージ",
+    "description": "説明",
+    "resources": "リソース",
+    "installPath": "インストールパス",
+    "cwd": "作業ディレクトリ",
+    "resolvedResources": "解決済みリソース",
+    "update": "更新",
+    "updateTip": "このパッケージを最新版に更新します",
+    "updateMessage": "{source} を更新しました。",
+    "remove": "削除",
+    "removeTip": "このパッケージをアンインストールします",
+    "removeMessage": "{source} を削除しました。",
+    "refresh": "再読み込み",
+    "refreshTip": "パッケージ一覧を再読み込みします",
+    "reloadAgent": "エージェントを再読み込み",
+    "reloadAgentTip": "この変更を反映するために実行中のセッションを再起動します",
+    "reloadAgentUnavailable": "このセッションではエージェントを再読み込みできません。",
+    "reloadingAgent": "エージェントを再読み込み中…",
+    "packageEnabledMessage": "{source} を有効化しました。",
+    "packageDisabledMessage": "{source} を無効化しました。"
   },
   "actions": {
     "retry": "再試行",
@@ -296,7 +380,9 @@
     "abortedByUser": "ユーザーによって中止されました",
     "invalidJson": "無効なJSON：{detail}",
     "modelsMustBeObject": "models.jsonはJSONオブジェクトである必要があります。",
-    "providersMustBeObject": "'providers'はオブジェクトである必要があります。"
+    "providersMustBeObject": "'providers'はオブジェクトである必要があります。",
+    "compactionFailed": "Context compaction failed.",
+    "compactionFailedDetail": "Context compaction failed: {error}"
   },
   "onboarding": {
     "openProject": "チャットを始めるためにプロジェクトを開いてください。",
@@ -412,7 +498,19 @@
     "deleteSessionRunning": "実行中のセッションは削除できません",
     "archiveDisabledActive": "アクティブなセッションはアーカイブできません",
     "archiveDisabledStreaming": "ストリーミング中のセッションはアーカイブできません",
-    "archiveDisabledRunning": "実行中のセッションはアーカイブできません"
+    "archiveDisabledRunning": "実行中のセッションはアーカイブできません",
+    "favourite": "お気に入り",
+    "unfavourite": "お気に入り解除",
+    "archiveAll": "すべてのセッションをアーカイブ",
+    "pin": "ピン留め",
+    "unpin": "ピン留め解除",
+    "sessionActions": "セッション操作",
+    "renameErrorGeneric": "セッション名を変更できませんでした。",
+    "sessionList": "セッション",
+    "noSavedSessions": "保存されたセッションはありません",
+    "searchTasks": "タスク",
+    "recentTasks": "最近のタスク",
+    "messageMatch": "メッセージ一致"
   },
   "updater": {
     "update": "更新",
@@ -443,7 +541,16 @@
     "pubkeyError": "アップデーターの公開鍵が見つからないか、バンドル署名が無効です。docs/AUTO_UPDATER.mdを参照してください。",
     "unknownError": "不明なアップデーターエラー",
     "versionLabel": "Picot {version}",
-    "versionLabelFrom": "Picot {version}（{current}から）"
+    "versionLabelFrom": "Picot {version}（{current}から）",
+    "clickToCheck": "クリックして確認",
+    "upToDate": "最新です",
+    "checkFailed": "確認に失敗しました",
+    "preparingDownload": "ダウンロードを準備中…",
+    "installFailed": "インストールに失敗しました",
+    "tryAgain": "再試行",
+    "installedRelaunching": "インストール済み。再起動しています…",
+    "relaunching": "再起動中…",
+    "versionAvailable": "{version} が利用可能"
   },
   "voice": {
     "voiceInput": "音声入力",
@@ -582,8 +689,57 @@
       "saveFailed": "スキル設定の保存に失敗しました。",
       "rescanFailed": "スキルの再スキャンに失敗しました。",
       "ambiguousRuleTarget": "このターゲットは複数のルートにマップされます。settings.jsonを手動で編集して変更してください。",
-      "scopeSummary": "{total}個のスキル · {groups}個のグループ"
-    }
+      "scopeSummary": "{total}個のスキル · {groups}個のグループ",
+      "discovered": "Discovered",
+      "install": "Install",
+      "packages": "Packages",
+      "sectionsAriaLabel": "Skills sections"
+    },
+    "installSkills": {
+      "title": "Install skills",
+      "description": "Link skills from a local folder. No files are copied or changed.",
+      "chooseFolder": "Choose folder",
+      "scanning": "Scanning skills…",
+      "scanFailed": "Failed to scan the selected folder.",
+      "global": "Global",
+      "project": "Current project",
+      "projectUntrusted": "This project is not trusted. Install to the current project is unavailable.",
+      "review": "Review installation",
+      "confirmation": "Install {count} selected skills to {scope}?",
+      "confirm": "Install selected skills",
+      "cancel": "Cancel",
+      "installing": "Installing…",
+      "installFailed": "Failed to install selected skills.",
+      "complete": "Installed {added} entries; {skipped} already configured.",
+      "restartRequired": "Saved. Start a new session or restart Pi for the change to take effect.",
+      "confirmationHeading": "Confirm skill installation",
+      "skill": "Skill",
+      "group": "Group"
+    },
+    "packageSkills": {
+      "title": "Packages skills",
+      "description": "Bundled skill candidates from configured Pi packages. These are read-only candidates; effective enable/disable state is computed by Pi and is not shown here.",
+      "bundledCandidates": "Bundled candidates",
+      "refresh": "Refresh",
+      "global": "Global",
+      "project": "Current project",
+      "loading": "Loading package skills…",
+      "retry": "Retry",
+      "empty": "No configured packages in this scope.",
+      "loadFailed": "Failed to load package skills.",
+      "projectUntrusted": "This project is not trusted. Project package paths are not shown.",
+      "notInstalled": "Not installed",
+      "package": "Package",
+      "canonicalPath": "Canonical path",
+      "candidateCount": "{count} candidates",
+      "scopeSummary": "{count} packages",
+      "enableAll": "Enable all"
+    },
+    "installedPackages": "インストール済みパッケージ",
+    "installedHelp": "このインストールに設定された拡張パッケージを管理します: 有効化、無効化、更新、削除。",
+    "copyConfigPath": "パスをコピー",
+    "configPathCopied": "コピーしました",
+    "configPathCopyFailed": "コピーに失敗しました"
   },
   "lanQr": {
     "modalAriaLabel": "モバイルQRコード",
@@ -661,43 +817,17 @@
     "model": "モデル",
     "compact": "コンパクト",
     "compactTitle": "コンテキストが80%を超えています — トークンを節約するためコンパクトにしてください",
-    "qrUnavailable": "QRコードが利用できません"
+    "qrUnavailable": "QRコードが利用できません",
+    "toggleContextControls": "Toggle context controls"
   },
   "browse": {
     "openExternalPrompt": "このリンクを新しいタブで開きますか："
-  },
-  "ephemeral": {
-    "placeholder": "何でも聞いてください…",
-    "send": "送信",
-    "abort": "中止",
-    "newChat": "新しいチャット",
-    "startingSideChat": "サイドチャットを開始中…",
-    "startingQuickChat": "クイックチャットを開始中…",
-    "tokens": "トークン",
-    "sideChat": "サイドチャット",
-    "sideChatLimit": "サイドチャットの上限に達しました",
-    "quickChat": "クイックチャット",
-    "minimize": "最小化",
-    "close": "閉じる",
-    "confirmDiscard": "この一時チャットは保存されません。破棄しますか？",
-    "confirmCloseSummary": "未保存のファイルと一時チャットを閉じて破棄しますか？",
-    "generating": "生成中",
-    "unread": "未読",
-    "resize": "クイックチャットのサイズを変更",
-    "statusReady": "準備完了",
-    "statusStreaming": "生成中",
-    "statusError": "エラー",
-    "statusDisconnected": "切断済み"
   },
   "fileMention": {
     "listLabel": "ファイル"
   },
   "workspace": {
-    "focus": "フォーカスモードに入る",
-    "focusTitle": "ワークスペース",
-    "back": "戻る",
-    "newTask": "新しいタスク",
-    "showMore": "もっと表示"
+    "back": "戻る"
   },
   "migrated": {
     "bootstrap": {
@@ -732,7 +862,8 @@
         "thinkingEffortOffClickToCycleReasoning": "思考の深さ：オフ。クリックして推論の深度を切り替え。",
         "receiveBetaUpdates": "ベータアップデートを受け取る",
         "searchTasks": "タスクを検索",
-        "searchResults": "検索結果"
+        "searchResults": "検索結果",
+        "openFilesPanel": "ファイルパネルを開く — {path}"
       },
       "placeholder": {
         "typeAMessageOrUseToCall": "メッセージ… / でコマンド、@ でファイルを入力",
@@ -869,5 +1000,84 @@
         }
       }
     }
+  },
+  "inbox": {
+    "startAutomatically": "自動で起動",
+    "launchOnOpen": "Picot の起動時にエージェント受信箱を開く",
+    "beta": "ベータ",
+    "telegram": "Telegram",
+    "tokenHelpPre": "Telegram ボットトークンを",
+    "tokenHelpMid": "から貼り付けてください。ボットに",
+    "tokenHelpPost": "を送ると、Picot が DM を自動検出します。",
+    "safety": "Telegram のメッセージはまずエージェント受信箱に入ります。プロジェクトエージェントへの派遣はローカル承認後に行われます。",
+    "botToken": "ボットトークン",
+    "tokenPlaceholder": "123456:ABCDEF…",
+    "connectTelegram": "Telegram に接続",
+    "reconnectTelegram": "Telegram に再接続",
+    "telegramDoctor": "Telegram 診断",
+    "runDoctor": "診断を実行",
+    "notCheckedYet": "まだ確認していません。",
+    "advancedRawConfig": "高度な生設定",
+    "advancedHelpPre": "内部設定の保存先：",
+    "advancedHelpPost": "。通常は手動で編集する必要はありません。",
+    "chatConfigPath": "~/.pi/agent/chat/config.json",
+    "saveRawConfig": "生設定を保存",
+    "invalidJson": "JSON が無効です",
+    "savedRawConfig": "生設定を保存しました。",
+    "pasteTokenFirst": "先に Telegram ボットトークンを貼り付けてください。",
+    "validatingToken": "Telegram ボットトークンを検証しています…",
+    "botConnectedSendStart": "ボットに接続しました。Telegram でボットに /start を送ってセットアップを完了してください。",
+    "telegramConnected": "Telegram に接続しました。検出された DM ユーザーのみが許可されます。",
+    "setupCanceled": "Telegram のセットアップをキャンセルしました。",
+    "disconnectConfirm": "Picot から Telegram を切断しますか？",
+    "disconnected": "Telegram を切断しました。",
+    "ready": "準備完了",
+    "needsAttention": "要確認",
+    "notReady": "未準備",
+    "notConnected": "Telegram は未接続です。",
+    "detectedDm": "検出された DM",
+    "authorizedDm": "許可された DM：{user}",
+    "internalId": "内部 ID：",
+    "disconnect": "切断",
+    "waitingForDm": "Telegram の DM を待っています…",
+    "openBot": "Telegram で {bot} を開く。",
+    "openTheBot": "Telegram でボットを開く。",
+    "sendStartStep": "プライベートチャットで /start を送信。",
+    "openTelegram": "Telegram を開く",
+    "tasks": "タスク",
+    "closeActivity": "アクティビティパネルを閉じる",
+    "filterAll": "すべて",
+    "filterPending": "保留",
+    "filterRunning": "実行中",
+    "filterDone": "完了",
+    "connecting": "接続中…",
+    "noTasks": "タスクはありません…",
+    "noTasksWithStatus": "ステータス「{status}」のタスクはありません…",
+    "approveCount": "{count} 件を承認",
+    "clearDone": "完了をクリア",
+    "promptAi": "AI に依頼",
+    "approve": "承認",
+    "target": "対象：{name}",
+    "viewSession": "セッションを表示 →",
+    "waitingForSession": "エージェントセッションの開始を待っています…",
+    "forceCancel": "強制キャンセル",
+    "waitingForInput": "入力待ちです。",
+    "project": "プロジェクト：{name}",
+    "retry": "再試行",
+    "dismiss": "閉じる",
+    "clear": "クリア",
+    "chooseProjectWhenCreating": "このタスクを作成するときにプロジェクトを選んでください。",
+    "untitled": "（無題）",
+    "listening": "待機中",
+    "taskBoard": "タスクボード",
+    "toggleTaskBoard": "タスクボードを切り替え",
+    "telegramNotConfigured": "Telegram は未設定です",
+    "telegramSettings": "Telegram 設定",
+    "source": "送信元：{channel}",
+    "history": "履歴",
+    "chooseProject": "プロジェクトを選択…",
+    "chooseProjectBeforeApproval": "承認する前にプロジェクトを選んでください。",
+    "loadingProjects": "プロジェクトを読み込み中…",
+    "projectRunning": "{name} · 実行中"
   }
 }

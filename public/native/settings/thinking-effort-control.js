@@ -11,7 +11,17 @@ function formatThinkingLevelLabel(level) {
   return label === key ? level : label;
 }
 
-export function setupThinkingEffortControl({ runtime, getTarget, configGateway, onError }) {
+function runtimeResponseData(response) {
+  return response?.response?.data ?? response?.data ?? response;
+}
+
+export function setupThinkingEffortControl({
+  runtime,
+  getTarget,
+  configGateway,
+  onError,
+  onRuntimeLevelChanged,
+}) {
   const radioGroup = document.getElementById("thinking-effort");
   const levelName = document.getElementById("thinking-effort-name");
   const thumb = document.getElementById("thinking-effort-marker");
@@ -19,6 +29,7 @@ export function setupThinkingEffortControl({ runtime, getTarget, configGateway, 
 
   const buttons = Array.from(radioGroup.querySelectorAll(".thinking-effort-dot"));
   const levels = buttons.map((btn) => btn.dataset.level).filter(Boolean);
+  let hasUserChangedLevel = false;
 
   function updateUI(level) {
     const index = levels.indexOf(level);
@@ -49,6 +60,7 @@ export function setupThinkingEffortControl({ runtime, getTarget, configGateway, 
   }
 
   async function setThinkingLevel(level) {
+    hasUserChangedLevel = true;
     try {
       if (configGateway) {
         const response = await configGateway.call("set_default_thinking_level", {
@@ -58,15 +70,35 @@ export function setupThinkingEffortControl({ runtime, getTarget, configGateway, 
         if (!response?.ok) throw new Error(response?.error || "Failed to save thinking level");
       }
 
-      const target = getTarget?.();
-      if (runtime && target) {
-        await runtime.request({ type: "set_thinking_level", level }, target, {
-          idempotencyKey: randomId(),
-        });
-      }
+      // The Settings control owns the persisted default. Applying that default
+      // to the current runtime is best-effort and must not make a successful
+      // save look like it failed or let a slow initial read restore stale UI.
       updateUI(level);
     } catch (error) {
       onError?.(error);
+      return;
+    }
+
+    const target = getTarget?.();
+    if (runtime && target) {
+      try {
+        const availableResponse = await runtime.request(
+          { type: "get_available_thinking_levels" },
+          target,
+        );
+        const availableLevels = runtimeResponseData(availableResponse)?.levels;
+        if (Array.isArray(availableLevels) && availableLevels.includes(level)) {
+          await runtime.request({ type: "set_thinking_level", level }, target, {
+            idempotencyKey: randomId(),
+          });
+          onRuntimeLevelChanged?.(level, target);
+        }
+      } catch (error) {
+        console.warn(
+          "[Native] Saved default thinking level but could not apply it to session:",
+          error,
+        );
+      }
     }
   }
 
@@ -74,7 +106,9 @@ export function setupThinkingEffortControl({ runtime, getTarget, configGateway, 
     if (!configGateway) return;
     try {
       const response = await configGateway.call("get_default_thinking_level", { scope: "global" });
-      if (response?.ok && response.data?.level) updateUI(response.data.level);
+      if (!hasUserChangedLevel && response?.ok && response.data?.level) {
+        updateUI(response.data.level);
+      }
     } catch (error) {
       onError?.(error);
     }

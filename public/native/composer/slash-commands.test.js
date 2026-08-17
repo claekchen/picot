@@ -28,14 +28,18 @@ describe("slash commands", () => {
     expect(catalog.has("picot-config")).toBe(false);
   });
 
-  it("treats // as a literal slash and rejects unknown commands", () => {
+  it("treats // as a literal slash and unknown slash commands as normal messages", () => {
     expect(resolveComposerInput("//literal", catalog, { working: false })).toEqual({
       kind: "runtime",
       command: { type: "prompt", message: "/literal" },
     });
-    expect(resolveComposerInput("/missing", catalog, { working: false })).toEqual({
-      kind: "rejected",
-      reason: "Unknown command: /missing",
+    expect(resolveComposerInput("/missing/path", catalog, { working: false })).toEqual({
+      kind: "runtime",
+      command: { type: "prompt", message: "/missing/path" },
+    });
+    expect(resolveComposerInput("/missing/path", catalog, { working: true })).toEqual({
+      kind: "runtime",
+      command: { type: "steer", message: "/missing/path" },
     });
   });
 

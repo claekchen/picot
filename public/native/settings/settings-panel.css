@@ -23,6 +23,37 @@
   display: none;
 }
 
+.resource-dialog-header {
+  display: none;
+}
+
+.settings-overlay.resource-dialog-overlay {
+  display: block;
+  z-index: 259;
+}
+
+/* design-token-ignore: desktop dialog geometry mirrors pi-web's resource manager. */
+.settings-panel.resource-dialog {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  width: min(860px, calc(100vw - 32px));
+  height: min(76vh, calc(100vh - 32px));
+  transform: translate(-50%, -50%);
+  z-index: 260;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.settings-panel.resource-dialog .resource-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--control-height-lg);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
 .settings-nav {
   border-right: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg-glass) 70%, transparent);
@@ -226,7 +257,6 @@
 }
 
 .settings-static-value {
-  max-width: 56%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -472,4 +502,16 @@
   .settings-section-title {
     margin-bottom: 6px;
   }
+}
+
+.settings-panel.resource-dialog .settings-nav {
+  display: none;
+}
+
+.settings-panel.resource-dialog .settings-content {
+  padding: var(--space-4);
+}
+
+.settings-panel.resource-dialog .settings-body {
+  max-width: none;
 }

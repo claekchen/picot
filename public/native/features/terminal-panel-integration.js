@@ -11,10 +11,11 @@ import {
 } from "../../terminal-font.js";
 import { TerminalPanel } from "../../terminal-panel.js";
 import { TerminalPreferences } from "../../terminal-preferences.js";
-import { encodeBase64, TerminalTab } from "../../terminal-tab.js";
+import { encodeBase64, picotThemeToXterm, TerminalTab } from "../../terminal-tab.js";
+import { onThemeChange } from "../../themes.js";
 
-export function setupTerminalPanel({ adapter, getWorkspaceId, native }) {
-  if (!native || !globalThis.PicotXterm) return null;
+export function setupTerminalPanel({ adapter, getWorkspaceId }) {
+  if (!globalThis.PicotXterm) return null;
 
   const preferences = new TerminalPreferences().load();
   const fontSize = Number.isFinite(preferences.fontSize)
@@ -73,7 +74,17 @@ export function setupTerminalPanel({ adapter, getWorkspaceId, native }) {
   adapter.setConnectionListener((connected) => {
     if (connected) client.requestList();
   });
-  return { client, panel };
+  // xterm paints its own viewport, so it cannot inherit the theme from CSS.
+  // Re-derive the xterm theme for every open tab whenever the app theme
+  // changes, otherwise a terminal keeps the background of the theme it was
+  // created under (often black) and visually clashes after a switch.
+  const unsubscribeTheme = onThemeChange(() => {
+    const theme = picotThemeToXterm();
+    for (const entry of client.tabs.values()) {
+      entry.tab?.setTheme?.(theme);
+    }
+  });
+  return { client, panel, unsubscribeTheme };
 }
 
 function getChatPanelFullscreenBounds() {

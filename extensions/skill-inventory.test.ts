@@ -641,7 +641,7 @@ describe("mutation: atomic settings patches", () => {
     const settingsPath = join(opts.agentDir, "settings.json");
     const lockDir = `${settingsPath}.lock`;
     // Pre-create the Pi-compatible lock directory with an old mtime (>10s stale).
-    mkdirAsync(lockDir);
+    await mkdirAsync(lockDir);
     const old = new Date(Date.now() - 20000);
     await utimes(lockDir, old, old);
     const inv = buildSkillInventory(opts);

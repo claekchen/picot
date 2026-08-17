@@ -80,6 +80,23 @@ describe("models provider editor", () => {
     delete globalThis.confirm;
   });
 
+  test("opens the advanced JSON editor in a modal dialog", async () => {
+    const editor = setupSettingsConfig({ configGateway: { call } });
+    await editor.loadInlineModelsEditor();
+
+    const trigger = document.querySelector(".models-config-source-button");
+    const backdrop = document.querySelector(".models-json-dialog-backdrop");
+    expect(backdrop.classList.contains("hidden")).toBe(true);
+    expect(backdrop.querySelector('[role="dialog"][aria-modal="true"]')).not.toBeNull();
+
+    trigger.click();
+    expect(backdrop.classList.contains("hidden")).toBe(false);
+    expect(backdrop.contains(document.getElementById("inline-models-textarea"))).toBe(true);
+
+    backdrop.querySelector('[aria-label="Close advanced JSON editor"]').click();
+    expect(backdrop.classList.contains("hidden")).toBe(true);
+  });
+
   test("switches providers without removing siblings from models.json", async () => {
     const editor = setupSettingsConfig({ configGateway: { call } });
     await editor.loadInlineModelsEditor();
@@ -119,6 +136,68 @@ describe("models provider editor", () => {
     );
   });
 
+  test("uses provider-card health layout for custom providers", async () => {
+    const customCall = vi.fn(async (operation) => {
+      if (operation === "read_models_config") {
+        return {
+          ok: true,
+          data: {
+            path: "/home/.pi/agent/models.json",
+            content: JSON.stringify({
+              providers: {
+                gateway: {
+                  baseUrl: "https://gateway.example/v1",
+                  api: "openai-completions",
+                  models: [{ id: "gpt-5.5" }],
+                },
+              },
+            }),
+          },
+        };
+      }
+      if (operation === "list_model_catalog") {
+        return {
+          ok: true,
+          data: {
+            providers: [
+              {
+                provider: "gateway",
+                displayName: "gateway",
+                configured: true,
+                models: [
+                  {
+                    provider: "gateway",
+                    id: "gpt-5.5",
+                    available: true,
+                    visible: true,
+                    health: { status: "healthy", latencyMs: 42 },
+                  },
+                ],
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`Unexpected operation: ${operation}`);
+    });
+    const editor = setupSettingsConfig({ configGateway: { call: customCall } });
+    await editor.loadInlineModelsEditor();
+    await editor.loadApiKeysPanel();
+
+    expect(document.querySelector(".provider-manager-health .api-key-row-header")).not.toBeNull();
+    expect(document.querySelector(".provider-manager-health .api-key-row-name").textContent).toBe(
+      "gateway",
+    );
+    expect(
+      document.querySelector(".provider-manager-health .api-key-row-summary").textContent,
+    ).toBe("settings.apiKeys.summary");
+    expect(
+      document.querySelector(
+        ".provider-manager-health .api-key-row-actions .api-model-check-visible",
+      ),
+    ).not.toBeNull();
+  });
+
   test("renders authenticated providers while models.json is still loading", async () => {
     let resolveModelsConfig;
     const pendingModelsConfig = new Promise((resolve) => {
@@ -156,6 +235,7 @@ describe("models provider editor", () => {
     const modelId = document.querySelector('.models-config-field input[placeholder="model-name"]');
     modelId.value = "claude-sonnet";
     modelId.dispatchEvent(new window.Event("input", { bubbles: true }));
+    document.querySelector(".models-config-form .ui-button--primary").click();
     document.getElementById("inline-models-save").click();
     await vi.waitFor(() => expect(onModelConfigurationChanged).toHaveBeenCalledOnce());
 
@@ -167,6 +247,19 @@ describe("models provider editor", () => {
     ]);
     expect(saved.providers.local.models[0].id).toBe("qwen");
   });
+
+  test("add-provider dialog uses themed overlay primitives", async () => {
+    const editor = setupSettingsConfig({ configGateway: { call } });
+    await editor.loadInlineModelsEditor();
+
+    document.querySelector(".models-provider-add").click();
+    const dialog = document.querySelector(".provider-picker-dialog");
+    expect(dialog.classList.contains("ui-dialog")).toBe(true);
+    expect(dialog.getAttribute("role")).toBe("dialog");
+    expect(dialog.closest(".ui-overlay.provider-picker-backdrop")).not.toBeNull();
+    expect(dialog.querySelector(".ui-input.provider-picker-search")).not.toBeNull();
+    expect(dialog.querySelector("#provider-picker-title").textContent).toBe("Add provider");
+  });
 });
 
 test("keeps provider keyboard focus inside the clipped sidebar", () => {
@@ -177,6 +270,12 @@ test("keeps provider keyboard focus inside the clipped sidebar", () => {
 
   expect(focusRule?.groups?.declarations).toMatch(/outline:\s*none/);
   expect(focusRule?.groups?.declarations).toMatch(/background:\s*var\(--bg-glass-hover\)/);
+});
+
+test("provider picker dialog does not fall back to a light-theme surface", () => {
+  const css = readFileSync("public/native/settings/settings-config.css", "utf8");
+  expect(css).not.toMatch(/--bg-primary/);
+  expect(css).toMatch(/\.provider-picker-dialog[\s\S]*?color:\s*var\(--text-primary\)/);
 });
 
 test("does not draw a curved inset border on the selected provider or model", () => {

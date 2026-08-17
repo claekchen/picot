@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { initI18n } from "../i18n.js";
 import "./super-agent-runtime.js";
+
+const enMessages = JSON.parse(readFileSync(join(process.cwd(), "public/locales/en.json"), "utf8"));
 
 // The component loads/saves Agent Inbox data through window.__picotConfigCall
 // (picot-bridge RPC), not fetch. This helper installs a spy that answers the
@@ -34,10 +39,17 @@ function lastWrittenTasks(call) {
 }
 
 describe("super-agent-runtime", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     document.body.innerHTML = "";
     localStorage.clear();
     vi.restoreAllMocks();
+    globalThis.fetch = vi.fn(async (input) => {
+      if (String(input).includes("/locales/")) {
+        return { ok: true, status: 200, json: async () => enMessages };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    await initI18n();
     mockConfig({
       tasks: [
         {

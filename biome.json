@@ -12,10 +12,13 @@
       "!.cache",
       "!.claude",
       "!.pi",
+      "!.pi-subagents",
       "!.worktrees",
       "!node_modules",
       "!public/vendor",
-      "!coverage"
+      "!coverage",
+      "!skill-install-prototype.html",
+      "!docs/prototypes"
     ]
   },
   "formatter": {

@@ -20,6 +20,11 @@ description = "Allow opening or focusing a project's workspace window at a saved
 commands.allow = ["open_session_in_project"]
 
 [[permission]]
+identifier = "allow-show-task-completion-notification"
+description = "Allow showing a task completion notification that opens its saved session."
+commands.allow = ["show_task_completion_notification"]
+
+[[permission]]
 identifier = "allow-ensure-agent-inbox-session"
 description = "Allow bootstrapping the fixed Agent Inbox workspace and background runtime."
 commands.allow = ["ensure_agent_inbox_session"]
@@ -40,6 +45,7 @@ permissions = [
   "allow-open-folder-as-workspace",
   "allow-open-new-session-in-workspace",
   "allow-open-session-in-project",
+  "allow-show-task-completion-notification",
   "allow-ensure-agent-inbox-session",
   "allow-check-beta-update",
   "allow-install-beta-update",

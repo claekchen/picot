@@ -1,5 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { initI18n } from "../../i18n.js";
 import { findLatestAssistantUsage, setupContextUsage } from "./context-usage.js";
+
+const enMessages = JSON.parse(readFileSync(join(process.cwd(), "public/locales/en.json"), "utf8"));
 
 function renderFixture() {
   document.body.innerHTML = `
@@ -17,8 +22,20 @@ function renderFixture() {
 }
 
 describe("context usage header", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     renderFixture();
+    globalThis.fetch = vi.fn(async (input) => {
+      if (String(input).includes("/locales/en.json")) {
+        return new Response(JSON.stringify(enMessages));
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+    await initI18n();
+  });
+
+  afterEach(() => {
+    document.body.replaceChildren();
+    vi.restoreAllMocks();
   });
 
   it("keeps the context pill and popover synced from restored session history", () => {
@@ -40,6 +57,33 @@ describe("context usage header", () => {
 
     expect(document.getElementById("context-viz-used").textContent).toMatch(/7%|context\.used/);
     expect(document.getElementById("context-viz-total").textContent).toBe("9.5k / 128.0k");
+  });
+
+  it("combines session in/out with context percentage on the same pill", () => {
+    const ui = setupContextUsage();
+
+    ui.setUsage({ input: 191, cacheRead: 9300 }, 128_000);
+    ui.setSessionTotals({ input: 1_600_000, output: 6000 });
+
+    const pill = document.getElementById("token-usage");
+    expect(pill.classList.contains("visible")).toBe(true);
+    expect(pill.textContent).toBe("In 1.6M · Out 6.0k · 7%");
+
+    pill.click();
+    const legendLabels = [...document.querySelectorAll(".context-legend-item")].map(
+      (item) => item.querySelector(".context-legend-left")?.textContent,
+    );
+    expect(legendLabels).toEqual(["Input", "Output", "Available", "Cached"]);
+    expect(document.getElementById("context-legend").textContent).toContain("6.0k");
+  });
+
+  it("shows session in/out even before current context is known", () => {
+    const ui = setupContextUsage();
+    ui.setSessionTotals({ input: 100, output: 50 });
+
+    const pill = document.getElementById("token-usage");
+    expect(pill.classList.contains("visible")).toBe(true);
+    expect(pill.textContent).toBe("In 100 · Out 50");
   });
 
   it("only shows the compact control when Pi has enough context to compact", () => {

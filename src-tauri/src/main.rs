@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod git_pi_runner;
+mod git_service;
 mod host_data;
+mod host_git;
 mod host_router;
 mod host_server;
 mod markitdown_preview;
@@ -11,7 +14,10 @@ mod pi_launch;
 mod pi_rpc_bridge;
 mod remote_auth;
 mod runtime_coordinator;
+mod session_ui_profile_store;
 mod settings_store;
+mod skill_install;
+mod skill_source_registry;
 mod terminal_manager;
 mod terminal_output;
 mod terminal_profiles;
@@ -26,6 +32,7 @@ use pi_launch::PiLaunchResolver;
 use remote_auth::RemoteAuth;
 use runtime_coordinator::RuntimeTarget;
 use serde_json::Value;
+use skill_source_registry::SkillSourceRegistry;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
@@ -39,6 +46,8 @@ use tauri_plugin_dialog::MessageDialogKind;
 use tauri_plugin_updater::UpdaterExt;
 
 type NativePiManagerState = NativePiManager;
+#[allow(dead_code)]
+type SkillSourceRegistryState = Arc<SkillSourceRegistry>;
 
 const MENU_NEW_SESSION_ID: &str = "picot-new-session";
 const BETA_UPDATE_ENDPOINT: &str =
@@ -157,6 +166,42 @@ async fn open_session_in_project(
         Some(session.to_string())
     };
     open_workspace_at_path(&app, Some(&window), &cwd, resume.as_deref())
+}
+
+/// Show a task notification whose default click opens the completed session.
+#[tauri::command]
+async fn show_task_completion_notification(
+    app: AppHandle,
+    title: String,
+    body: String,
+    workspace_id: String,
+    session_id: String,
+) -> Result<(), String> {
+    let host = app
+        .try_state::<HostServer>()
+        .ok_or_else(|| "Host server is not ready".to_string())?;
+    let cwd = host.workspace_root_path(&workspace_id)?;
+
+    #[cfg(target_os = "macos")]
+    let _ = notify_rust::set_application(&app.config().identifier);
+
+    let notification = notify_rust::Notification::new()
+        .summary(&title)
+        .body(&body)
+        .show()
+        .map_err(|error| format!("Cannot show task notification: {error}"))?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        notification.wait_for_action(move |action| {
+            if action == "__closed" {
+                return;
+            }
+            if let Err(error) = open_workspace_at_path(&app, None, &cwd, Some(&session_id)) {
+                log::error!("[picot-native] failed to open notification session: {error}");
+            }
+        });
+    });
+    Ok(())
 }
 
 /// Ensure the fixed Agent Inbox workspace exists, has a sidebar-visible saved
@@ -381,12 +426,6 @@ fn open_native_workspace_window(
         .icon(icon)
         .map_err(|error| error.to_string())?;
 
-    // Plain native title bar on every platform. The overlay title bar
-    // (`TitleBarStyle::Overlay` + `hidden_title(true)`) extended the WebView
-    // under the traffic lights so the custom header/sidebar could render
-    // there, but it also made three-finger/click-drag window moves
-    // unreliable — reverted in favor of the guaranteed-to-work native title
-    // bar drag behavior.
     let builder = builder.decorations(true);
     let window = builder.build().map_err(|error| error.to_string())?;
     set_window_workspace(app, window.label(), &target.workspace_id);
@@ -528,7 +567,6 @@ fn open_bootstrap_window(app: &AppHandle, startup_error: &str) -> Result<(), Str
         .icon(icon)
         .map_err(|error| error.to_string())?;
 
-    // See open_native_workspace_window() — plain native title bar, no overlay.
     let builder = builder.decorations(true);
     builder.build().map_err(|error| error.to_string())?;
     Ok(())
@@ -789,6 +827,7 @@ fn setup_native_runtime(app: &mut tauri::App, static_dir: PathBuf) -> Result<(),
             runtimes.clone(),
             remote_auth,
             std::collections::HashMap::from([(target.workspace_id.clone(), PathBuf::from(&cwd))]),
+            Some(app.handle().clone()),
         )
         .await?;
         runtimes.spawn(target.clone(), launch)?;
@@ -824,7 +863,7 @@ fn setup_native_runtime(app: &mut tauri::App, static_dir: PathBuf) -> Result<(),
 
 fn main() {
     if let Err(error) = fix_path_env::fix_all_vars() {
-        eprintln!("[picot] failed to sync PATH from login shell: {error}");
+        eprintln!("[picot] failed to sync login-shell environment: {error}");
     }
 
     tauri::Builder::default()
@@ -851,6 +890,7 @@ fn main() {
             open_folder_as_workspace,
             open_new_session_in_workspace,
             open_session_in_project,
+            show_task_completion_notification,
             ensure_agent_inbox_session,
             check_beta_update,
             install_beta_update

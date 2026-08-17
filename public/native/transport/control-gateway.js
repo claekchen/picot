@@ -40,15 +40,36 @@ export class HostControlGateway {
 
   async listPiPackages() {
     const frame = await this.#request("list_pi_packages");
+    // List returns an array of package objects (source, scope, installedPath,
+    // disabled, packageName, version, description).
     return Array.isArray(frame?.packages) ? frame.packages : [];
   }
 
-  async installPiPackage(source) {
-    await this.#request("install_pi_package", { source });
+  async installPiPackage(source, { local = false } = {}) {
+    await this.#request("install_pi_package", { source, local });
   }
 
-  async removePiPackage(source) {
-    await this.#request("remove_pi_package", { source });
+  async removePiPackage(source, { local = false } = {}) {
+    await this.#request("remove_pi_package", { source, local });
+  }
+
+  async updatePiPackage(source = "") {
+    await this.#request("update_pi_package", { source });
+  }
+
+  async setPiPackageDisabled(source, scope, disabled, cwd = "") {
+    const frame = await this.#request("set_pi_package_disabled", {
+      source,
+      scope,
+      disabled,
+      cwd,
+    });
+    return Boolean(frame?.changed);
+  }
+
+  async restartRuntime(workspaceId, sessionId) {
+    const frame = await this.#request("restart_runtime", { workspaceId, sessionId });
+    return frame?.instanceId ?? null;
   }
 
   async listInstalledApps() {
@@ -73,6 +94,20 @@ export class HostControlGateway {
       deleted: Array.isArray(frame?.deleted) ? frame.deleted : [],
       errors: Array.isArray(frame?.errors) ? frame.errors : [],
     };
+  }
+
+  // Skills install flow: pick a local source directory, scan it for skill
+  // candidates, then link selected candidates into Pi's settings.json.
+  async pickSkillSource(workspaceId) {
+    return this.#request("pick_skill_source", { workspaceId });
+  }
+
+  async scanSkillInstallSource(sourceId, workspaceId) {
+    return this.#request("skill_scan_install_source", { sourceId, workspaceId });
+  }
+
+  async installSkillLinks(request) {
+    return this.#request("skill_install_links", request);
   }
 
   #receive(frame) {

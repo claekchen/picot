@@ -17,6 +17,14 @@ import { randomId } from "../utils/random-id.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+export function consumeConfigResponseFrame(gateway, frame) {
+  return Boolean(
+    frame?.type === "runtime_event" &&
+      frame.event?.type === "extension_ui_request" &&
+      gateway.consumeNotify(frame.event),
+  );
+}
+
 export class ConfigGateway {
   #runtime;
   #getTarget;
@@ -38,8 +46,8 @@ export class ConfigGateway {
     return this.#send(op, params, options);
   }
 
-  #send(op, params, { timeoutMs = DEFAULT_TIMEOUT_MS }) {
-    const target = this.#getTarget();
+  #send(op, params, { timeoutMs = DEFAULT_TIMEOUT_MS, target: targetOverride }) {
+    const target = targetOverride ?? this.#getTarget();
     if (!target) return Promise.reject(new Error("No active session for configuration request"));
     const id = `cfg-${randomId()}`;
     const message = `/picot-config ${JSON.stringify({ id, op, params })}`;

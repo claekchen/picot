@@ -134,36 +134,51 @@ export function setupAtFileMention(options) {
     }
   }
 
-  function select(index) {
-    const candidate = matches[index];
+  function insertValue(value, isDirectory) {
     const active = activeAtMention(input);
-    if (!candidate || !active) return;
-    const suffix = candidate.isDirectory ? "" : " ";
-    const value = candidate.value;
-    let end = active.end;
+    const cursor = input.selectionStart ?? input.value.length;
+    const suffix = isDirectory ? "" : " ";
+    // Replace an active `@` token if the caret is inside one, otherwise append
+    // the mention at the current caret position.
+    const start = active ? active.start : cursor;
+    let end = active ? active.end : cursor;
     // If a closing quote already follows the cursor, consume it so we don't
     // produce @"dir/file\"\" — the candidate value already supplies its own.
-    if (value.endsWith('"') && input.value[active.end] === '"') {
-      end = active.end + 1;
+    if (value.endsWith('"') && input.value[end] === '"') {
+      end += 1;
     }
     try {
-      input.setRangeText(value + suffix, active.start, end, "end");
+      input.setRangeText(value + suffix, start, end, "end");
     } catch {
-      const before = input.value.slice(0, active.start);
+      const before = input.value.slice(0, start);
       const after = input.value.slice(end);
       input.value = before + value + suffix + after;
-      const caret = active.start + value.length + suffix.length;
+      const caret = start + value.length + suffix.length;
       input.setSelectionRange(caret, caret);
     }
     // For a quoted directory, setRangeText(..., "end") lands the caret after the
     // closing quote; move it back inside so typing can continue the path.
-    if (candidate.isDirectory && value.endsWith('"')) {
+    if (isDirectory && value.endsWith('"')) {
       const pos = (input.selectionStart ?? 0) - 1;
       input.setSelectionRange(pos, pos);
     }
     input.dispatchEvent(
       new (options.Event ?? doc.defaultView?.Event ?? Event)("input", { bubbles: true }),
     );
+  }
+
+  function select(index) {
+    const candidate = matches[index];
+    if (!candidate) return;
+    insertValue(candidate.value, candidate.isDirectory);
+    close();
+  }
+
+  // Insert a pre-built mention (e.g. `@src/a.ts` or `@"my folder/"`) directly
+  // into the textarea, without an active listbox. Used by the file browser's
+  // quick-mention button. Replaces an active `@` token at the caret if present.
+  function insert(value, isDirectory) {
+    insertValue(value, isDirectory);
     close();
   }
 
@@ -278,5 +293,20 @@ export function setupAtFileMention(options) {
     await runRequest(active);
   }
 
-  return { close, destroy, update, select };
+  return { close, destroy, update, select, insert };
+}
+
+/**
+ * Build a fully-formed @-mention token from a workspace-relative path,
+ * mirroring the Rust `build_file_mention_candidate` (host_data.rs): directories
+ * get a trailing `/`, and a path containing a space is quoted with `"..."`.
+ *
+ * @param {string} relativePath - workspace-relative path (no leading `/`)
+ * @param {boolean} isDirectory
+ * @returns {string} e.g. `@src/a.ts`, `@src/`, or `@"my folder/f"`
+ */
+export function buildAtMentionValue(relativePath, isDirectory) {
+  const valuePath = isDirectory ? `${relativePath}/` : relativePath;
+  const needsQuotes = relativePath.includes(" ");
+  return needsQuotes ? `@"${valuePath}"` : `@${valuePath}`;
 }

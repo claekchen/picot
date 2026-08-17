@@ -1,4 +1,4 @@
-// ABOUTME: Coordinates file preview tabs, transient chat tabs, and panel layout.
+// ABOUTME: Coordinates file preview tabs and panel layout.
 // ABOUTME: Owns dirty-buffer settlement, renderer lifecycle, and tab interactions.
 
 /**
@@ -13,6 +13,7 @@
 import { classifyFilePath } from "./file-language.js";
 import { createFileRenderer } from "./file-preview-renderers.js";
 import { FileTabState } from "./file-tab-state.js";
+import { createGitDiffRenderer } from "./git-diff-renderer.js";
 import { onLocaleChange, t } from "./i18n.js";
 import { normalizeLocalPath } from "./workspace/path-utils.js";
 
@@ -46,37 +47,6 @@ function appendCloseIcon(button) {
   secondLine.setAttribute("x2", "18");
   secondLine.setAttribute("y2", "18");
   svg.append(firstLine, secondLine);
-  button.appendChild(svg);
-}
-
-function appendTabBarActionIcon(button, icon) {
-  if (icon !== "chat-plus") return;
-  const svg = document.createElementNS(SVG_NS, "svg");
-  for (const [name, value] of Object.entries({
-    "aria-hidden": "true",
-    width: "14",
-    height: "14",
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    "stroke-width": "2",
-    "stroke-linecap": "round",
-    "stroke-linejoin": "round",
-  })) {
-    svg.setAttribute(name, value);
-  }
-  for (const d of [
-    "M12 19v-6",
-    "M9 8V2",
-    "M15 8V2",
-    "M18 8v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8Z",
-    "M19 18h4",
-    "m-2-2 2 2-2 2",
-  ]) {
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", d);
-    svg.appendChild(path);
-  }
   button.appendChild(svg);
 }
 
@@ -135,13 +105,11 @@ export class FilePreviewPanel {
     this.transientStatus = "";
     this.cleanupListeners = [];
     this.activeDialogCancel = null;
-    // Transient (non-file) content tabs — Side Chats — projected into the same
-    // tab strip as file tabs but never persisted to FileTabState.
-    this.transientTabs = new Map();
-    // Discriminated active content: { kind: "file" | "transient", id } | null.
+    // Git diff tabs — in-memory, single-tab model. Each openDiff() call
+    // replaces the previous diff content (id is always "git-diff").
+    this.diffTabs = new Map();
+    // Discriminated active content: { kind: "file" | "diff", id } | null.
     this.activeContent = null;
-    // Tab-bar actions (e.g. "New Side Chat") registered by an external manager.
-    this.tabBarActions = new Map();
     this._interactionLocked = false;
     this._riskVersion = 0;
 
@@ -202,7 +170,6 @@ export class FilePreviewPanel {
     const normalizedPath = normalizeLocalPath(filePath);
     const existing = this.state.getTabs().find((tab) => tab.filePath === normalizedPath);
     const currentTab = this.state.getActiveTab();
-    if (this.activeContent?.kind === "transient") this._deactivateCurrent();
 
     if (existing) {
       if (metadata.mode === "diff") this.state.updateTab(existing.id, { mode: "diff" });
@@ -277,6 +244,7 @@ export class FilePreviewPanel {
     this._abortAllTabLoads();
     this.loadTokens.clear();
     this._destroyRenderer();
+    this.diffTabs.clear();
     this.activeDialogCancel?.();
     this.activeDialogCancel = null;
 
@@ -285,76 +253,59 @@ export class FilePreviewPanel {
     this._unsubscribeLocale?.();
   }
 
-  // ── Transient content tabs + close-risk participant APIs ────────────────
-
-  registerTransientTab(descriptor) {
-    if (!descriptor?.id) return;
-    this.transientTabs.set(descriptor.id, { ...descriptor });
+  openDiff(descriptor) {
+    const id = "git-diff";
+    this.diffTabs.set(id, { ...descriptor, id });
+    this._deactivateCurrent();
+    this.activeContent = { kind: "diff", id };
+    this._destroyRenderer();
+    this.currentRenderer = createGitDiffRenderer({ ...descriptor, wrapLines: this.wrapLines });
+    this.currentRenderer.mount(this.content);
+    this._openPanel();
     this._renderTabBar();
+    this._renderToolbar();
+    return id;
   }
 
-  updateTransientTab(id, visualState = {}) {
-    const entry = this.transientTabs.get(id);
-    if (!entry) return;
-    Object.assign(entry, visualState);
+  closeDiffTab(id) {
+    if (!this.diffTabs.has(id)) return false;
+    this.diffTabs.delete(id);
+    const wasActive = this.activeContent?.kind === "diff" && this.activeContent.id === id;
+    if (wasActive) {
+      this._deactivateCurrent();
+      if (this.state.getActiveTab()) {
+        this.activateContent({ kind: "file", id: this.state.activeTabId });
+      } else {
+        this._closePanel();
+      }
+    }
     this._renderTabBar();
+    return true;
   }
 
   activateContent({ kind, id } = {}) {
-    if (kind !== "file" && kind !== "transient") return;
-    if (kind === "transient") {
-      const entry = this.transientTabs.get(id);
-      if (!entry) return;
+    if (kind !== "file" && kind !== "diff") return;
+    if (kind === "diff") {
+      const diffDescriptor = this.diffTabs.get(id);
+      if (!diffDescriptor) return;
       this._deactivateCurrent();
-      if (this.content && entry.contentElement) {
-        this.content.appendChild(entry.contentElement);
-      }
-      entry.onActivate?.();
-      this.activeContent = { kind: "transient", id };
+      this.activeContent = { kind: "diff", id };
+      this._destroyRenderer();
+      this.currentRenderer = createGitDiffRenderer({
+        ...diffDescriptor,
+        wrapLines: this.wrapLines,
+      });
+      this.currentRenderer.mount(this.content);
       this._openPanel();
       this._renderTabBar();
       this._renderToolbar();
-    } else {
-      this._deactivateCurrent();
-      void this._selectTab(id).then(() => {
-        this.activeContent = { kind: "file", id };
-        this._renderTabBar();
-      });
+      return;
     }
-  }
-
-  requestCloseTransientTab(id) {
-    const entry = this.transientTabs.get(id);
-    return entry?.onRequestClose?.();
-  }
-
-  unregisterTransientTab(id) {
-    const entry = this.transientTabs.get(id);
-    if (!entry) return;
-    const wasActive = this.activeContent?.kind === "transient" && this.activeContent.id === id;
-    const transientOrder = Array.from(this.transientTabs.keys());
-    const closedIndex = transientOrder.indexOf(id);
-    if (wasActive) this._deactivateCurrent();
-    this.transientTabs.delete(id);
-    this._renderTabBar();
-    if (wasActive) {
-      const nextTransient =
-        transientOrder[closedIndex + 1] || transientOrder[closedIndex - 1] || null;
-      if (nextTransient) {
-        this.activateContent({ kind: "transient", id: nextTransient });
-        Array.from(this.tabBar?.querySelectorAll("[data-transient-id]") || [])
-          .find((tab) => tab.dataset.transientId === nextTransient)
-          ?.focus();
-      } else if (this.state.getActiveTab()) {
-        this.activateContent({ kind: "file", id: this.state.activeTabId });
-      } else {
-        document.getElementById("side-chat-btn")?.focus();
-      }
-    }
-    // If no tabs remain, hide the panel.
-    if (this.transientTabs.size === 0 && this.state.getTabs().length === 0) {
-      this._closePanel();
-    }
+    this._deactivateCurrent();
+    void this._selectTab(id).then(() => {
+      this.activeContent = { kind: "file", id };
+      this._renderTabBar();
+    });
   }
 
   showPanel() {
@@ -409,49 +360,13 @@ export class FilePreviewPanel {
     return this.getCloseRisk();
   }
 
-  // Tab-bar action adapter so an external manager (SideChatManager) can place a
-  // control (e.g. "New Side Chat") inside the tab strip without owning DOM.
-  registerTabBarAction(actionId, { label, labelKey, onClick, icon = "" } = {}) {
-    if (!actionId) return;
-    this.tabBarActions.set(actionId, {
-      label,
-      labelKey,
-      onClick,
-      icon,
-      enabled: true,
-      visible: true,
-      disabledReason: "",
-    });
-    this._renderTabBar();
-  }
-
-  setTabBarActionEnabled(actionId, enabled, disabledReason = "") {
-    const action = this.tabBarActions.get(actionId);
-    if (!action) return;
-    action.enabled = Boolean(enabled);
-    action.disabledReason = disabledReason;
-    this._renderTabBar();
-  }
-
-  setTabBarActionVisible(actionId, visible) {
-    const action = this.tabBarActions.get(actionId);
-    if (!action) return;
-    action.visible = Boolean(visible);
-    this._renderTabBar();
-  }
-
   _deactivateCurrent() {
-    if (this.activeContent?.kind === "transient") {
-      const entry = this.transientTabs.get(this.activeContent.id);
-      entry?.onDeactivate?.();
-      entry?.contentElement?.remove();
+    if (this.activeContent?.kind === "diff") {
+      this._destroyRenderer();
+      this.content?.replaceChildren();
     } else if (this.activeContent?.kind === "file" || this.currentRenderer) {
       this._captureActiveRenderer();
       this._destroyRenderer();
-      // Match the transient branch's element removal: clear any file renderer
-      // DOM left in the content node so it cannot overlap a subsequently
-      // mounted transient (Side Chat) view. _mountRenderer already does this
-      // before re-mounting a file; only the deactivation path was missing it.
       this.content?.replaceChildren();
     }
     this.activeContent = null;
@@ -530,49 +445,35 @@ export class FilePreviewPanel {
     this.tabBar.replaceChildren();
     this.tabBar.setAttribute("role", "tablist");
 
-    // Transient (Side Chat) tabs render before file tabs and preserve
-    // registration order. They are in-memory only — never FileTabState.
-    for (const [id, entry] of this.transientTabs) {
+    // Git diff tabs render first — single-tab model (id is always "git-diff").
+    for (const [id, entry] of this.diffTabs) {
+      const isActive = this.activeContent?.kind === "diff" && this.activeContent.id === id;
       const tabEl = document.createElement("div");
-      const isActive = this.activeContent?.kind === "transient" && this.activeContent.id === id;
-      tabEl.className = `file-preview-tab transient-tab${isActive ? " active" : ""}`;
-      tabEl.dataset.transientId = id;
+      tabEl.className = `file-preview-tab diff-tab${isActive ? " active" : ""}`;
+      tabEl.dataset.diffId = id;
       tabEl.setAttribute("role", "tab");
       tabEl.setAttribute("tabindex", isActive ? "0" : "-1");
       tabEl.setAttribute("aria-selected", String(isActive));
 
       const name = document.createElement("span");
       name.className = "file-preview-tab-name";
-      name.textContent = entry.title || "";
-      name.title = entry.fullTitle || entry.title || "";
+      name.textContent = entry.displayPath || "Diff";
       tabEl.appendChild(name);
-
-      if (entry.status === "streaming" || entry.unread) {
-        const status = document.createElement("span");
-        status.className = "transient-tab-status";
-        const label =
-          entry.status === "streaming" ? t("ephemeral.generating") : t("ephemeral.unread");
-        status.textContent = entry.status === "streaming" ? "⋯" : "●";
-        status.title = label;
-        status.setAttribute("aria-label", label);
-        tabEl.appendChild(status);
-      }
 
       const closeBtn = document.createElement("button");
       closeBtn.className = "file-preview-tab-close";
       closeBtn.type = "button";
       closeBtn.title = t("files.preview.close");
       closeBtn.setAttribute("aria-label", t("files.preview.close"));
-      closeBtn.disabled = this._interactionLocked;
       appendCloseIcon(closeBtn);
       closeBtn.addEventListener("click", (event) => {
         event.stopPropagation();
-        this.requestCloseTransientTab(id);
+        this.closeDiffTab(id);
       });
       tabEl.appendChild(closeBtn);
 
       tabEl.addEventListener("click", () => {
-        if (!this._interactionLocked) this.activateContent({ kind: "transient", id });
+        if (!this._interactionLocked) this.activateContent({ kind: "diff", id });
       });
       tabEl.addEventListener("keydown", (event) => this._onTabKeydown(event));
       this.tabBar.appendChild(tabEl);
@@ -648,24 +549,6 @@ export class FilePreviewPanel {
       this.tabBar.appendChild(tabEl);
     }
 
-    // Tab-bar actions (e.g. "New Side Chat") registered by an external manager.
-    for (const [actionId, action] of this.tabBarActions) {
-      if (action.visible === false) continue;
-      const label = action.labelKey ? t(action.labelKey) : action.label || "";
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = `file-preview-tab-action${action.icon ? " icon-btn" : ""}`;
-      btn.dataset.actionId = actionId;
-      btn.setAttribute("aria-label", label);
-      btn.title = action.disabledReason || label;
-      if (action.icon) appendTabBarActionIcon(btn, action.icon);
-      else btn.textContent = label;
-      btn.disabled = !action.enabled || this._interactionLocked;
-      btn.addEventListener("click", () => {
-        if (action.enabled && !this._interactionLocked) action.onClick?.();
-      });
-      this.tabBar.appendChild(btn);
-    }
     this._ensureRovingTabindex();
   }
 
@@ -736,7 +619,6 @@ export class FilePreviewPanel {
       this.activeContent = { kind: "file", id: tabId };
       return true;
     }
-    if (this.activeContent?.kind === "transient") this._deactivateCurrent();
     if (this._isConversionTab(currentTab)) this._abortTabLoad(currentTab?.id);
     this._captureActiveRenderer();
     if (!this.state.selectTab(tabId)) return false;
@@ -784,21 +666,6 @@ export class FilePreviewPanel {
         Array.from(this.tabBar?.querySelectorAll("[data-tab-id]") || [])
           .find((tab) => tab.dataset.tabId === result.nextTabId)
           ?.focus();
-      }
-    } else if (this.transientTabs.size > 0) {
-      // The last file tab closed but a Side Chat (transient) tab remains:
-      // keep the panel open and switch to the most recent transient tab.
-      // Mirrors unregisterTransientTab's dual-empty check — only collapse
-      // when neither file nor transient tabs remain.
-      const lastTransient = Array.from(this.transientTabs.keys()).pop();
-      if (lastTransient) {
-        this.activateContent({ kind: "transient", id: lastTransient });
-        Array.from(this.tabBar?.querySelectorAll("[data-transient-id]") || [])
-          .find((tab) => tab.dataset.transientId === lastTransient)
-          ?.focus();
-      } else {
-        this._closePanel();
-        if (wasActive) document.getElementById("file-sidebar-toggle")?.focus();
       }
     } else {
       this._closePanel();

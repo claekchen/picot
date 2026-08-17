@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { JSDOM } from "jsdom";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { initI18n } from "../i18n.js";
-import { activeAtMention, setupAtFileMention } from "./at-file-mention.js";
+import { activeAtMention, buildAtMentionValue, setupAtFileMention } from "./at-file-mention.js";
 
 const enMessages = JSON.parse(readFileSync(join(process.cwd(), "public/locales/en.json"), "utf8"));
 
@@ -49,6 +49,57 @@ describe("at-file-mention", () => {
     delete globalThis.Event;
     delete globalThis.queueMicrotask;
     delete globalThis.fetch;
+  });
+
+  test("insert adds a built mention at the caret and closes the popup", async () => {
+    const controller = setupAtFileMention({
+      input,
+      container,
+      getWorkspaceRoot: () => "/repo",
+      searchFiles: canned([]),
+    });
+    input.value = "review ";
+    setCaret(input, 7);
+    controller.insert(buildAtMentionValue("src/a.ts", false), false);
+    expect(input.value).toBe("review @src/a.ts ");
+    expect(input.selectionStart).toBe(input.value.length);
+    expect(container.classList.contains("hidden")).toBe(true);
+    controller.destroy();
+  });
+
+  test("insert replaces an active @ token instead of appending", async () => {
+    const controller = setupAtFileMention({
+      input,
+      container,
+      getWorkspaceRoot: () => "/repo",
+      searchFiles: canned([]),
+    });
+    input.value = "@oldtail";
+    setCaret(input, 8);
+    controller.insert(buildAtMentionValue("src/a.ts", false), false);
+    expect(input.value).toBe("@src/a.ts ");
+    controller.destroy();
+  });
+
+  test("insert drops a directory inside a quoted value with no trailing space", async () => {
+    const controller = setupAtFileMention({
+      input,
+      container,
+      getWorkspaceRoot: () => "/repo",
+      searchFiles: canned([]),
+    });
+    input.value = "";
+    setCaret(input, 0);
+    controller.insert(buildAtMentionValue("my folder", true), true);
+    expect(input.value).toBe('@"my folder/"');
+    expect(input.selectionStart).toBe(input.value.length - 1);
+    controller.destroy();
+  });
+
+  test("buildAtMentionValue quotes spaces, slashes directories, and skips quotes otherwise", () => {
+    expect(buildAtMentionValue("src/a.ts", false)).toBe("@src/a.ts");
+    expect(buildAtMentionValue("src", true)).toBe("@src/");
+    expect(buildAtMentionValue("my folder/f.ts", false)).toBe('@"my folder/f.ts"');
   });
 
   test("recognizes an @ token only at a supported boundary", () => {

@@ -9,6 +9,7 @@ export function setupContextViz({
   contextVizTotal,
   getUsage,
   getContextWindowSize,
+  getSessionTotals,
 }) {
   if (!tokenUsageEl || !contextViz) {
     return {
@@ -25,19 +26,26 @@ export function setupContextViz({
 
     const input = Number(lastUsage.input) || 0;
     const cacheRead = Number(lastUsage.cacheRead) || 0;
+    const output = Number(getSessionTotals?.()?.output) || Number(lastUsage.output) || 0;
     const total = contextWindowSize;
     const totalUsed = input + cacheRead;
     const free = Math.max(0, total - totalUsed);
 
-    const segments = [
+    const windowSegments = [
       { key: "cache", label: t("context.cached"), tokens: cacheRead, color: "cache" },
       { key: "input", label: t("context.input"), tokens: input, color: "input" },
       { key: "free", label: t("context.available"), tokens: free, color: "free" },
     ];
+    const legendItems = [
+      { key: "input", label: t("context.input"), tokens: input, color: "input" },
+      { key: "output", label: t("context.output"), tokens: output, color: "output" },
+      { key: "free", label: t("context.available"), tokens: free, color: "free" },
+      { key: "cache", label: t("context.cached"), tokens: cacheRead, color: "cache" },
+    ];
 
     if (contextBar) {
       contextBar.innerHTML = "";
-      for (const segment of segments) {
+      for (const segment of windowSegments) {
         if (segment.tokens <= 0) continue;
         const element = document.createElement("div");
         element.className = `context-bar-segment ${segment.color}`;
@@ -52,7 +60,7 @@ export function setupContextViz({
 
     if (contextLegend) {
       contextLegend.innerHTML = "";
-      for (const segment of segments) {
+      for (const segment of legendItems) {
         const item = document.createElement("div");
         item.className = "context-legend-item";
 
@@ -103,6 +111,10 @@ export function setupContextViz({
 
   tokenUsageEl.addEventListener("click", (event) => {
     event.stopPropagation();
+    const lastUsage = getUsage?.();
+    const contextWindowSize =
+      Number(getContextWindowSize?.()) || Number(lastUsage?.contextWindow) || 0;
+    if (!lastUsage || contextWindowSize <= 0) return;
     if (contextViz.classList.contains("hidden")) {
       updateContextViz();
       positionAndShow();

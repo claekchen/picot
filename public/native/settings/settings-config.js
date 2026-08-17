@@ -156,19 +156,24 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
 
   function openProviderPicker(providers) {
     const backdrop = document.createElement("div");
-    backdrop.className = "provider-picker-backdrop";
+    backdrop.className = "ui-overlay provider-picker-backdrop";
     const dialog = document.createElement("div");
-    dialog.className = "provider-picker-dialog";
+    dialog.className = "ui-dialog provider-picker-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-labelledby", "provider-picker-title");
     const head = document.createElement("div");
     head.className = "provider-picker-head";
-    head.innerHTML = `<div><h2>Add provider</h2><p>Connect a provider to start using its models.</p></div>`;
+    head.innerHTML = `<div><h2 id="provider-picker-title">Add provider</h2><p>Connect a provider to start using its models.</p></div>`;
     const close = document.createElement("button");
-    close.className = "provider-picker-close";
+    close.type = "button";
+    close.className = "ui-icon-button ui-icon-button--ghost provider-picker-close";
+    close.setAttribute("aria-label", "Close");
     close.textContent = "×";
     head.appendChild(close);
     dialog.appendChild(head);
     const search = document.createElement("input");
-    search.className = "provider-picker-search";
+    search.className = "ui-input provider-picker-search";
     search.placeholder = "Search providers…";
     dialog.appendChild(search);
     const grid = document.createElement("div");
@@ -271,28 +276,26 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
 
   function setupDialog(title, subtitle) {
     const backdrop = document.createElement("div");
-    backdrop.className = "provider-picker-backdrop";
+    backdrop.className = "ui-overlay provider-picker-backdrop";
     const dialog = document.createElement("div");
-    dialog.className = "provider-setup-dialog";
-    Object.assign(dialog.style, {
-      width: "min(560px, 100%)",
-      maxHeight: "90vh",
-      overflow: "auto",
-      boxSizing: "border-box",
-      padding: "24px",
-      background: "var(--bg-primary, #fff)",
-      border: "1px solid var(--border)",
-      borderRadius: "16px",
-      boxShadow: "0 24px 80px rgb(0 0 0 / 30%)",
-    });
+    dialog.className = "ui-dialog provider-setup-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
     const head = document.createElement("div");
     head.className = "provider-picker-head";
-    head.innerHTML = `<div><h2>${title}</h2><p>${subtitle}</p></div>`;
+    const heading = document.createElement("h2");
+    heading.textContent = title;
+    const caption = document.createElement("p");
+    caption.textContent = subtitle;
+    const titleWrap = document.createElement("div");
+    titleWrap.append(heading, caption);
     const close = document.createElement("button");
-    close.className = "provider-picker-close";
+    close.type = "button";
+    close.className = "ui-icon-button ui-icon-button--ghost provider-picker-close";
+    close.setAttribute("aria-label", "Close");
     close.textContent = "×";
     close.onclick = () => backdrop.remove();
-    head.appendChild(close);
+    head.append(titleWrap, close);
     dialog.appendChild(head);
     backdrop.appendChild(dialog);
     document.body.appendChild(backdrop);
@@ -330,7 +333,6 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
     );
     const form = document.createElement("div");
     form.className = "provider-setup-form";
-    Object.assign(form.style, { display: "grid", gap: "14px" });
     const fields = [
       ["Provider ID", "provider", "my-provider"],
       ["Base URL", "baseUrl", "https://api.example.com/v1"],
@@ -341,25 +343,10 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
     for (const [label, key, placeholder] of fields) {
       const wrap = document.createElement("label");
       wrap.textContent = label;
-      Object.assign(wrap.style, {
-        display: "grid",
-        gap: "6px",
-        color: "var(--text-dim)",
-        fontSize: "13px",
-      });
       const input = document.createElement("input");
+      input.className = "ui-input";
       input.placeholder = placeholder;
       input.type = key === "apiKey" ? "password" : "text";
-      Object.assign(input.style, {
-        boxSizing: "border-box",
-        width: "100%",
-        padding: "10px 12px",
-        border: "1px solid var(--border)",
-        borderRadius: "8px",
-        background: "var(--bg-glass)",
-        color: "var(--text-primary)",
-        font: "inherit",
-      });
       wrap.appendChild(input);
       form.appendChild(wrap);
       inputs[key] = input;
@@ -610,7 +597,7 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
 
     const health = model.health || { status: "unknown" };
     const healthDot = document.createElement("span");
-    healthDot.className = `api-model-health-dot ${health.status || "unknown"}`;
+    healthDot.className = `api-model-health-dot ${healthDotClass(health)}`;
     healthDot.title = describeModelHealth(health);
 
     const label = document.createElement("div");
@@ -687,6 +674,20 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
       : t("settings.apiKeys.failed");
   }
 
+  // Healthy responses still vary a lot in latency; a flat green dot hides
+  // that. Split into three visual tiers so slow-but-working models stand out
+  // from both fast ones and actual failures.
+  function healthDotClass(health) {
+    if (!health?.status || health.status === "unknown" || health.status === "checking") {
+      return health?.status || "unknown";
+    }
+    if (health.status !== "healthy") return "unhealthy";
+    if (typeof health.latencyMs !== "number") return "healthy";
+    if (health.latencyMs < 1500) return "healthy";
+    if (health.latencyMs < 3000) return "healthy-slow";
+    return "healthy-veryslow";
+  }
+
   function setModelRowChecking(row) {
     if (!row) return;
     const dot = row.querySelector(".api-model-health-dot");
@@ -721,7 +722,7 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
     const status = row.querySelector(".api-model-health-status");
     const health = { status: result.status, latencyMs: result.latencyMs, error: result.error };
     if (dot) {
-      dot.className = `api-model-health-dot ${result.status || "unknown"}`;
+      dot.className = `api-model-health-dot ${healthDotClass(health)}`;
       dot.title = describeModelHealth(health);
     }
     if (status) status.textContent = describeModelHealth(health);
@@ -803,22 +804,30 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
         return;
       }
       saveBtn.disabled = true;
-      const resp = await call("set_api_key", { provider: p.provider, apiKey: key }).catch(
-        (error) => ({
-          ok: false,
-          error: error?.message,
-        }),
-      );
-      if (resp?.ok) {
-        await onModelConfigurationChanged?.();
-        loadApiKeysPanel();
-      } else {
-        err.textContent = resp?.error || t("settings.apiKeys.saveFailed");
+      try {
+        const resp = await call("set_api_key", { provider: p.provider, apiKey: key }).catch(
+          (error) => ({
+            ok: false,
+            error: error?.message,
+          }),
+        );
+        if (resp?.ok) {
+          await onModelConfigurationChanged?.();
+          await loadApiKeysPanel();
+        } else {
+          err.textContent = resp?.error || t("settings.apiKeys.saveFailed");
+          err.style.display = "";
+          saveBtn.disabled = false;
+        }
+      } catch (error) {
+        err.textContent = error?.message || t("settings.apiKeys.saveFailed");
         err.style.display = "";
         saveBtn.disabled = false;
       }
     };
-    saveBtn.addEventListener("click", save);
+    saveBtn.addEventListener("click", () => {
+      save();
+    });
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -844,18 +853,25 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
   }
 
   const inlineConfigPath = document.getElementById("inline-config-path");
+  const inlineConfigPathCopy = document.getElementById("inline-config-path-copy");
   const inlineConfigTextarea = document.getElementById("inline-config-textarea");
   const inlineConfigError = document.getElementById("inline-config-error");
   const inlineConfigSave = document.getElementById("inline-config-save");
+
+  function setInlineConfigPath(path, { copyable = true } = {}) {
+    if (!inlineConfigPath) return;
+    inlineConfigPath.textContent = path;
+    inlineConfigPath.title = path;
+    if (inlineConfigPathCopy) inlineConfigPathCopy.classList.toggle("hidden", !path || !copyable);
+  }
 
   async function loadInlineConfigEditor() {
     if (!inlineConfigTextarea) return;
     inlineConfigError?.classList.add("hidden");
     inlineConfigTextarea.value = "";
-    if (inlineConfigPath)
-      inlineConfigPath.textContent = t(
-        "migrated.native.settings.settingsConfig.textcontent.loading",
-      );
+    setInlineConfigPath(t("migrated.native.settings.settingsConfig.textcontent.loading"), {
+      copyable: false,
+    });
     try {
       const data = await call("read_agent_config");
       if (!data?.ok) throw new Error(data?.error || "Failed to load config");
@@ -864,15 +880,33 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
       } catch {
         inlineConfigTextarea.value = data.data.content;
       }
-      if (inlineConfigPath) inlineConfigPath.textContent = data.data.path || "";
+      setInlineConfigPath(data.data.path || "");
     } catch (e) {
-      if (inlineConfigPath) inlineConfigPath.textContent = "";
+      setInlineConfigPath("", { copyable: false });
       if (inlineConfigError) {
         inlineConfigError.textContent = e.message || String(e);
         inlineConfigError.classList.remove("hidden");
       }
     }
   }
+
+  inlineConfigPathCopy?.addEventListener("click", async () => {
+    const path = inlineConfigPath?.textContent || "";
+    if (!path) return;
+    const defaultLabel = t("settings.copyConfigPath");
+    try {
+      await navigator.clipboard?.writeText(path);
+      inlineConfigPathCopy.title = t("settings.configPathCopied");
+      inlineConfigPathCopy.setAttribute("aria-label", t("settings.configPathCopied"));
+    } catch {
+      inlineConfigPathCopy.title = t("settings.configPathCopyFailed");
+      inlineConfigPathCopy.setAttribute("aria-label", t("settings.configPathCopyFailed"));
+    }
+    setTimeout(() => {
+      inlineConfigPathCopy.title = defaultLabel;
+      inlineConfigPathCopy.setAttribute("aria-label", defaultLabel);
+    }, 1500);
+  });
 
   inlineConfigSave?.addEventListener("click", async () => {
     if (!inlineConfigTextarea) return;
@@ -903,6 +937,7 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
   const inlineModelsInsertExample = document.getElementById("inline-models-insert-example");
   const modelsConfigDocsLink = document.getElementById("models-config-docs-link");
   let selectedModelsConfigItem = null;
+  let newModelDraft = null;
 
   const MODELS_JSON_EXAMPLE = `{
   "providers": {
@@ -982,15 +1017,22 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
     if (
       !selectedModelsConfigItem ||
       (selectedModelsConfigItem.type === "auth" &&
-        !configuredProviders.some(
-          (provider) => provider.provider === selectedModelsConfigItem.provider,
-        )) ||
+        (providerNames.includes(selectedModelsConfigItem.provider) ||
+          !configuredProviders.some(
+            (provider) => provider.provider === selectedModelsConfigItem.provider,
+          ))) ||
       (selectedModelsConfigItem.type !== "auth" && !providers[selectedModelsConfigItem.provider]) ||
       (selectedModelsConfigItem.type === "model" &&
-        !providers[selectedModelsConfigItem.provider].models?.[selectedModelsConfigItem.index])
+        !providers[selectedModelsConfigItem.provider].models?.[selectedModelsConfigItem.index]) ||
+      (selectedModelsConfigItem.type === "model-new" &&
+        selectedModelsConfigItem.provider !== newModelDraft?.provider)
     ) {
-      selectedModelsConfigItem = configuredProviders[0]
-        ? { type: "auth", provider: configuredProviders[0].provider }
+      newModelDraft = null;
+      const defaultAuthProvider = configuredProviders.find(
+        (provider) => !providerNames.includes(provider.provider),
+      );
+      selectedModelsConfigItem = defaultAuthProvider
+        ? { type: "auth", provider: defaultAuthProvider.provider }
         : providerNames[0]
           ? { type: "provider", provider: providerNames[0] }
           : null;
@@ -1003,23 +1045,65 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
       layout.className = "models-config-layout";
       apiKeysContainer.replaceChildren(layout);
 
-      const source = document.createElement("details");
-      source.className = "models-config-source";
-      const summary = document.createElement("summary");
-      summary.textContent = "Advanced JSON editor";
-      source.append(summary, inlineModelsTextarea);
-      inlineModelsTextarea.addEventListener("change", renderModelsConfigLayout);
+      const openSource = document.createElement("button");
+      openSource.type = "button";
+      openSource.className = "ui-button ui-button--secondary models-config-source-button";
+      openSource.textContent = "Advanced JSON editor";
+
+      const sourceDialog = document.createElement("div");
+      sourceDialog.className = "models-json-dialog-backdrop hidden";
+      const dialog = document.createElement("section");
+      dialog.className = "models-json-dialog";
+      dialog.setAttribute("role", "dialog");
+      dialog.setAttribute("aria-modal", "true");
+      dialog.setAttribute("aria-labelledby", "models-json-dialog-title");
+      const header = document.createElement("header");
+      header.className = "models-json-dialog-header";
+      const heading = document.createElement("div");
+      const title = document.createElement("h2");
+      title.id = "models-json-dialog-title";
+      title.textContent = "Advanced JSON editor";
+      heading.append(title, inlineModelsPath);
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "ui-icon-button ui-icon-button--ghost";
+      close.setAttribute("aria-label", "Close advanced JSON editor");
+      close.textContent = "×";
+      header.append(heading, close);
+      dialog.append(header, inlineModelsTextarea);
 
       const footer = document.createElement("div");
       footer.className = "models-config-footer";
       const sourceSection = inlineModelsSave?.closest(".settings-section");
       const actions = inlineModelsSave?.closest(".settings-config-actions");
-      footer.appendChild(source);
+      footer.appendChild(openSource);
       if (actions) {
-        actions.classList.add("models-config-footer-actions");
-        footer.appendChild(actions);
+        actions.classList.add("models-json-dialog-actions");
+        dialog.appendChild(actions);
       }
-      apiKeysContainer.append(layout, footer);
+      sourceDialog.appendChild(dialog);
+      document.body.appendChild(sourceDialog);
+
+      const closeSourceDialog = () => {
+        sourceDialog.classList.add("hidden");
+        renderModelsConfigLayout();
+        openSource.focus();
+      };
+      openSource.addEventListener("click", () => {
+        sourceDialog.classList.remove("hidden");
+        inlineModelsTextarea.focus();
+      });
+      close.addEventListener("click", closeSourceDialog);
+      sourceDialog.addEventListener("click", (event) => {
+        if (event.target === sourceDialog) closeSourceDialog();
+      });
+      sourceDialog.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeSourceDialog();
+      });
+      inlineModelsTextarea.addEventListener("change", renderModelsConfigLayout);
+
+      footer.classList.add("models-config-toolbar");
+      apiKeysContainer.append(footer, layout);
       if (sourceSection) sourceSection.hidden = true;
     } else if (layout.parentNode !== apiKeysContainer) {
       apiKeysContainer.prepend(layout);
@@ -1043,6 +1127,7 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
     };
 
     for (const provider of configuredProviders) {
+      if (providerNames.includes(provider.provider)) continue;
       const item = document.createElement("button");
       item.type = "button";
       item.className = "models-provider-item models-auth-provider-item";
@@ -1071,7 +1156,6 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
     }
 
     for (const id of providerNames) {
-      const provider = providers[id];
       const item = document.createElement("button");
       item.type = "button";
       item.className = "models-provider-item";
@@ -1086,41 +1170,6 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
         renderModelsConfigLayout();
       });
       list.appendChild(item);
-
-      for (const [index, model] of (provider.models || []).entries()) {
-        const modelItem = document.createElement("button");
-        modelItem.type = "button";
-        modelItem.className = "models-model-item";
-        modelItem.classList.toggle(
-          "selected",
-          selectedModelsConfigItem?.type === "model" &&
-            selectedModelsConfigItem.provider === id &&
-            selectedModelsConfigItem.index === index,
-        );
-        modelItem.textContent = model.id || "New model";
-        modelItem.addEventListener("click", () => {
-          selectedModelsConfigItem = { type: "model", provider: id, index };
-          renderModelsConfigLayout();
-        });
-        list.appendChild(modelItem);
-      }
-
-      const addModel = document.createElement("button");
-      addModel.type = "button";
-      addModel.className = "models-model-add";
-      addModel.textContent = "+ Model";
-      addModel.addEventListener("click", () => {
-        provider.models ||= [];
-        provider.models.push({ id: "new-model" });
-        selectedModelsConfigItem = {
-          type: "model",
-          provider: id,
-          index: provider.models.length - 1,
-        };
-        sync();
-        renderModelsConfigLayout();
-      });
-      list.appendChild(addModel);
     }
     sidebar.appendChild(list);
 
@@ -1150,6 +1199,16 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
       }
     } else if (selectedModelsConfigItem.type === "provider") {
       renderProviderConfigForm(main, parsed, selectedModelsConfigItem.provider, update);
+      renderModelsListSection(main, parsed, selectedModelsConfigItem.provider, update);
+      const catalogProvider = catalogProviders.find(
+        (candidate) => candidate.provider === selectedModelsConfigItem.provider,
+      );
+      const catalogModels = catalogProvider ? getProviderModels(catalogProvider) : [];
+      if (catalogProvider?.configured && catalogModels.length > 0) {
+        renderProviderHealthSection(main, catalogProvider);
+      }
+    } else if (selectedModelsConfigItem.type === "model-new") {
+      renderNewModelForm(main, parsed, selectedModelsConfigItem.provider, update);
     } else {
       renderModelConfigForm(
         main,
@@ -1268,6 +1327,221 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
       ),
       createModelsField("API", api),
     );
+    main.append(header, form);
+  }
+
+  function renderProviderHealthSection(main, provider) {
+    const healthSection = document.createElement("div");
+    healthSection.className = "provider-manager-health";
+
+    const header = document.createElement("div");
+    header.className = "api-key-row-header provider-manager-health-header";
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "api-provider-toggle";
+    toggle.setAttribute(
+      "aria-label",
+      t("settings.apiKeys.toggleModels", { provider: provider.displayName || provider.provider }),
+    );
+    toggle.setAttribute("aria-expanded", "true");
+    toggle.textContent = "▼";
+
+    const info = document.createElement("div");
+    info.className = "api-key-row-info api-provider-title-toggle";
+    info.tabIndex = 0;
+    info.setAttribute("role", "button");
+    info.setAttribute(
+      "aria-label",
+      t("settings.apiKeys.toggleModels", { provider: provider.displayName || provider.provider }),
+    );
+
+    const title = document.createElement("div");
+    title.className = "api-key-row-name";
+    title.textContent = provider.displayName || provider.provider;
+    info.appendChild(title);
+
+    const summary = document.createElement("div");
+    summary.className = "api-key-row-summary";
+    summary.textContent = describeProviderSummary(getProviderModels(provider));
+
+    const actions = document.createElement("div");
+    actions.className = "api-key-row-actions";
+    const checkHealthBtn = document.createElement("button");
+    checkHealthBtn.type = "button";
+    checkHealthBtn.className = "api-model-check-visible";
+    checkHealthBtn.textContent = t("settings.apiKeys.checkHealth");
+    checkHealthBtn.disabled = !getProviderModels(provider).some(
+      (model) => model.visible !== false && model.available,
+    );
+    checkHealthBtn.addEventListener("click", () => checkModelHealth(provider.provider));
+    actions.appendChild(checkHealthBtn);
+
+    header.append(toggle, info, summary, actions);
+    const modelList = buildModelList(provider);
+    modelList?.classList.add("provider-manager-model-list");
+    const toggleModelList = () => {
+      if (!modelList) return;
+      modelList.classList.toggle("collapsed");
+      toggle.setAttribute("aria-expanded", String(!modelList.classList.contains("collapsed")));
+    };
+    header.addEventListener("click", (event) => {
+      if (event.target.closest?.(".api-key-row-actions")) return;
+      toggleModelList();
+    });
+    info.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggleModelList();
+      }
+    });
+
+    healthSection.append(header);
+    if (modelList) healthSection.appendChild(modelList);
+    main.appendChild(healthSection);
+  }
+
+  function renderModelsListSection(main, config, providerName, update) {
+    const provider = config.providers[providerName];
+    const models = provider.models || [];
+    const section = document.createElement("div");
+    section.className = "models-config-models-section";
+    const header = document.createElement("div");
+    header.className = "models-config-models-header";
+    const title = document.createElement("h3");
+    title.textContent = "Models";
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "models-model-add ui-button ui-button--ghost ui-button--sm";
+    addBtn.textContent = "+ Add model";
+    addBtn.addEventListener("click", () => {
+      newModelDraft = { id: "", provider: providerName };
+      selectedModelsConfigItem = { type: "model-new", provider: providerName };
+      renderModelsConfigLayout();
+    });
+    header.append(title, addBtn);
+    section.appendChild(header);
+    if (models.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "models-config-models-empty";
+      empty.textContent = "No models configured yet.";
+      section.appendChild(empty);
+    } else {
+      const list = document.createElement("ul");
+      list.className = "models-config-models-list";
+      for (const [index, model] of models.entries()) {
+        const row = document.createElement("li");
+        row.className = "models-config-models-row";
+        const label = document.createElement("span");
+        label.textContent = model.id || "(unnamed model)";
+        const actions = document.createElement("div");
+        actions.className = "models-config-models-row-actions";
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.className = "ui-button ui-button--sm";
+        editBtn.textContent = "Edit";
+        editBtn.addEventListener("click", () => {
+          selectedModelsConfigItem = { type: "model", provider: providerName, index };
+          renderModelsConfigLayout();
+        });
+        const deleteBtn = document.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.className = "ui-button ui-button--danger ui-button--sm";
+        deleteBtn.textContent = "Delete";
+        deleteBtn.addEventListener("click", () => {
+          if (!confirm(`Delete model “${model.id || "(unnamed model)"}”?`)) return;
+          update(() => {
+            provider.models.splice(index, 1);
+          });
+        });
+        actions.append(editBtn, deleteBtn);
+        row.append(label, actions);
+        list.appendChild(row);
+      }
+      section.appendChild(list);
+    }
+    main.appendChild(section);
+  }
+
+  function renderNewModelForm(main, config, providerName, update) {
+    if (!newModelDraft) newModelDraft = { id: "", provider: providerName };
+    const draft = newModelDraft;
+    const header = document.createElement("div");
+    header.className = "models-config-detail-header";
+    const eyebrow = document.createElement("span");
+    eyebrow.className = "models-config-eyebrow";
+    eyebrow.textContent = "New model";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "ui-button ui-button--sm";
+    cancel.textContent = "Cancel";
+    cancel.addEventListener("click", () => {
+      newModelDraft = null;
+      selectedModelsConfigItem = { type: "provider", provider: providerName };
+      renderModelsConfigLayout();
+    });
+    header.append(eyebrow, cancel);
+
+    const form = document.createElement("div");
+    form.className = "models-config-form";
+    const bindings = [
+      ["Model ID", "id", "model-name"],
+      ["Display name", "name", "Optional"],
+      ["Context window", "contextWindow", "Optional"],
+      ["Max tokens", "maxTokens", "Optional"],
+    ];
+    for (const [label, key, placeholder] of bindings) {
+      const input = createModelsInput(draft[key], placeholder);
+      if (key === "contextWindow" || key === "maxTokens") input.type = "number";
+      input.addEventListener("input", () => {
+        const value = input.value.trim();
+        draft[key] = value
+          ? key === "contextWindow" || key === "maxTokens"
+            ? Number(value)
+            : value
+          : undefined;
+      });
+      form.appendChild(createModelsField(label, input));
+    }
+    const reasoning = document.createElement("input");
+    reasoning.type = "checkbox";
+    reasoning.checked = draft.reasoning === true;
+    reasoning.addEventListener("change", () => {
+      draft.reasoning = reasoning.checked || undefined;
+    });
+    form.appendChild(createModelsField("Reasoning model", reasoning));
+
+    const error = document.createElement("p");
+    error.className = "models-config-form-error";
+    error.hidden = true;
+
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "ui-button ui-button--primary";
+    save.textContent = "Add model";
+    save.addEventListener("click", () => {
+      const id = (draft.id || "").trim();
+      if (!id) {
+        error.textContent = "Model ID is required.";
+        error.hidden = false;
+        return;
+      }
+      update(() => {
+        const provider = config.providers[providerName];
+        provider.models ||= [];
+        const modelDraft = { ...draft };
+        delete modelDraft.provider;
+        provider.models.push({ ...modelDraft, id });
+        newModelDraft = null;
+        selectedModelsConfigItem = {
+          type: "model",
+          provider: providerName,
+          index: provider.models.length - 1,
+        };
+      });
+    });
+    form.appendChild(error);
+    form.appendChild(save);
     main.append(header, form);
   }
 

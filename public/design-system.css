@@ -23,6 +23,7 @@
   justify-content: center;
   min-height: var(--control-height-md);
   font-size: var(--font-size-md);
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -53,6 +54,8 @@
 }
 
 .ui-icon-button--sm {
+  min-height: var(--control-height-sm);
+  height: var(--control-height-sm);
   width: var(--control-height-sm);
 }
 
@@ -82,7 +85,7 @@
 .ui-button--ghost,
 .ui-icon-button--ghost {
   background: transparent;
-  border-color: transparent;
+  border: none;
   color: var(--text-dim);
 }
 
@@ -197,4 +200,71 @@
   display: flex;
   align-items: center;
   gap: var(--toolbar-gap);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Dialog overlay + panel primitives
+
+   Single source of truth for every centered modal floating layer in the
+   app (`.dialog`, `.settings-panel.resource-dialog`, `.command-palette`,
+   `.session-search-dialog`, `.provider-picker-dialog`,
+   `.provider-setup-dialog`). Each feature keeps only its own positioning,
+   sizing, layout and motion; the shared frosted-glass look — background,
+   border, radius, elevation and the focused dimmed backdrop — lives here.
+
+   Dark themes ship no shadow tokens and a frosted background that matches
+   the page tone, so an undifferentiated modal disappears. These primitives
+   apply an explicit elevation shadow and a #3a3a3a border in dark themes
+   so every dialog reads clearly above the dimmed backdrop. Light themes
+   keep the standard shadow tokens and border.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Dimmed, blurred backdrop behind a centered modal. */
+.ui-overlay,
+#dialog-container,
+.settings-overlay.resource-dialog-overlay,
+.command-palette-overlay,
+.session-search-overlay,
+.provider-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Frosted, elevated panel shared by every centered modal. */
+.ui-dialog,
+.dialog,
+.settings-panel.resource-dialog,
+.command-palette,
+.session-search-dialog,
+.provider-picker-dialog,
+.provider-setup-dialog {
+  background: var(--bg-frosted);
+  backdrop-filter: blur(var(--blur-heavy)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--blur-heavy)) saturate(1.5);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg), var(--shadow-inset);
+}
+
+/* Dark themes: lift the panel off the equally-dark backdrop with a real
+   shadow and a #3a3a3a border (see comment above). */
+:root:not([data-theme="clean"]):not([data-theme="terracotta"]):not([data-theme="sage"]) .ui-dialog,
+:root:not([data-theme="clean"]):not([data-theme="terracotta"]):not([data-theme="sage"]) .dialog,
+:root:not([data-theme="clean"]):not([data-theme="terracotta"]):not([data-theme="sage"])
+  .settings-panel.resource-dialog,
+:root:not([data-theme="clean"]):not([data-theme="terracotta"]):not([data-theme="sage"])
+  .command-palette,
+:root:not([data-theme="clean"]):not([data-theme="terracotta"]):not([data-theme="sage"])
+  .session-search-dialog,
+:root:not([data-theme="clean"]):not([data-theme="terracotta"]):not([data-theme="sage"])
+  .provider-picker-dialog,
+:root:not([data-theme="clean"]):not([data-theme="terracotta"]):not([data-theme="sage"])
+  .provider-setup-dialog {
+  border-color: #3a3a3a;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.55),
+    0 8px 24px rgba(0, 0, 0, 0.4);
 }

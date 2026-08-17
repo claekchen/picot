@@ -18,6 +18,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createAgentSession, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
+import { buildPackageSkillInventory } from "./package-skill-inventory";
 import {
   buildTelegramDmConfig,
   buildTelegramDoctorReport,
@@ -67,6 +68,8 @@ type CatalogRegistry = {
   getProviderDisplayName: (provider: string) => string;
   refresh: () => void | Promise<void>;
 };
+
+const MODEL_REGISTRY_REFRESH_TIMEOUT_MS = 2_000;
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -428,14 +431,45 @@ function readConfigFile(filePath: string, fallback: string): { content: string; 
 
 function writeConfigFile(filePath: string, content: unknown): void {
   if (typeof content !== "string") throw new Error("content must be a string");
-  JSON.parse(content); // validate before writing
+  try {
+    JSON.parse(content); // validate before writing
+  } catch (error) {
+    throw new Error(
+      `content is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf8");
 }
 
+async function refreshRegistryBestEffort(registry?: CatalogRegistry): Promise<boolean> {
+  if (!registry) return false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), MODEL_REGISTRY_REFRESH_TIMEOUT_MS);
+      timer.unref?.();
+    });
+    const refresh = (async () => {
+      await registry.refresh();
+      return true;
+    })().catch(() => false);
+    return await Promise.race([refresh, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function readSettingsObject(filePath: string): Record<string, unknown> {
   if (!fs.existsSync(filePath)) return {};
-  const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `Pi settings at ${filePath} must be valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error(`Pi settings must be a JSON object: ${filePath}`);
   }
@@ -635,7 +669,12 @@ function telegramBotPayload(identity: TelegramBotIdentity) {
 
 function readAuthConfig(): Record<string, unknown> {
   if (!fs.existsSync(AUTH_CONFIG_PATH)) return {};
-  const parsed = JSON.parse(fs.readFileSync(AUTH_CONFIG_PATH, "utf8"));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(AUTH_CONFIG_PATH, "utf8"));
+  } catch {
+    return {};
+  }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
   return parsed as Record<string, unknown>;
 }
@@ -779,6 +818,14 @@ export async function handlePicotConfig(
         return { ok: true, data: { provider } };
       }
 
+      case "list_package_skill_inventory": {
+        const scope = parseSkillScope(params.scope);
+        return {
+          ok: true,
+          data: buildPackageSkillInventory(skillInventoryOptions(scope, ctx)),
+        };
+      }
+
       case "list_skill_inventory": {
         const scope = parseSkillScope(params.scope);
         return { ok: true, data: buildSkillInventory(skillInventoryOptions(scope, ctx)) };
@@ -836,15 +883,7 @@ export async function handlePicotConfig(
           throw new Error("'providers' must be an object");
         }
         writeConfigFile(MODELS_CONFIG_PATH, content);
-        let refreshed = false;
-        try {
-          if (registry) {
-            await registry.refresh();
-            refreshed = true;
-          }
-        } catch {
-          // Non-fatal: file is saved; user can /reload or restart.
-        }
+        const refreshed = await refreshRegistryBestEffort(registry);
         return { ok: true, data: { path: MODELS_CONFIG_PATH, refreshed } };
       }
 

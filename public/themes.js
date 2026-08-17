@@ -101,11 +101,73 @@ function migrateLegacyLocalStorageValue() {
 
 migrateLegacyLocalStorageValue();
 
-export function applyTheme(themeId) {
+const themeListeners = new Set();
+
+/**
+ * Subscribe to active-theme changes. Returns an unsubscribe function.
+ * Fired whenever `data-theme` changes (explicit applyTheme or OS-driven),
+ * not at subscription time — subscribers re-derive state from CSS variables.
+ */
+export function onThemeChange(listener) {
+  if (typeof listener !== "function") return () => {};
+  themeListeners.add(listener);
+  return () => themeListeners.delete(listener);
+}
+
+function notifyThemeChange(themeId) {
+  for (const listener of themeListeners) {
+    try {
+      listener(themeId);
+    } catch (e) {
+      console.warn("[themes] theme-change listener error:", e);
+    }
+  }
+  window.dispatchEvent(new CustomEvent("picot:theme-change", { detail: { themeId } }));
+}
+
+function setRootTheme(themeId) {
   const root = document.documentElement;
   if (!themes[themeId]) themeId = "night";
   root.setAttribute("data-theme", themeId);
-  writeThemeCookie(themeId);
+  notifyThemeChange(themeId);
+  return themeId;
+}
+
+export function applyTheme(themeId, options) {
+  const apply = () => {
+    const resolved = setRootTheme(themeId);
+    writeThemeCookie(resolved);
+  };
+  const origin = options?.origin;
+  if (origin && Number.isFinite(origin.x) && Number.isFinite(origin.y)) {
+    withViewTransition(apply, origin);
+  } else {
+    withViewTransition(apply);
+  }
+}
+
+/**
+ * Fallback-first View Transitions wrapper. Synchronously runs `apply()` when
+ * `document.startViewTransition` is missing or the user prefers reduced
+ * motion; otherwise records the click origin (center fallback) into CSS
+ * custom properties and routes through the native transition. Callers may
+ * omit the origin entirely to retain the documented 50%/50% center fallback.
+ */
+export function withViewTransition(apply, origin) {
+  const root = document.documentElement;
+  const supportsTransition =
+    typeof document !== "undefined" && typeof document.startViewTransition === "function";
+  const prefersReducedMotion =
+    typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!supportsTransition || prefersReducedMotion) {
+    apply();
+    return;
+  }
+  const x = origin && Number.isFinite(origin.x) ? `${origin.x}px` : "50%";
+  const y = origin && Number.isFinite(origin.y) ? `${origin.y}px` : "50%";
+  root.style.setProperty("--theme-transition-x", x);
+  root.style.setProperty("--theme-transition-y", y);
+  document.startViewTransition(apply);
 }
 
 export function getCurrentTheme() {
@@ -123,8 +185,8 @@ export function getCurrentTheme() {
 if (!readThemeCookie()) {
   window.matchMedia?.("(prefers-color-scheme: light)").addEventListener("change", (e) => {
     if (!readThemeCookie()) {
-      const root = document.documentElement;
-      root.setAttribute("data-theme", e.matches ? "terracotta" : "night");
+      setRootTheme(e.matches ? "terracotta" : "night");
+      writeThemeCookie(e.matches ? "terracotta" : "night");
     }
   });
 }

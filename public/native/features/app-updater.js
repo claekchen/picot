@@ -1,3 +1,5 @@
+import { onLocaleChange, t } from "../../i18n.js";
+
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const BETA_SETTINGS_KEY = "picot-settings-beta-updates";
 
@@ -41,17 +43,87 @@ export function setupAppUpdater({ logger = console } = {}) {
     sidebarBtn?.classList.toggle("hidden", !visible);
   }
 
+  let view = { kind: "idle" };
+
+  function applyView() {
+    switch (view.kind) {
+      case "checking":
+        setState({
+          status: t("updater.checking"),
+          button: t("updater.checking"),
+          disabled: true,
+        });
+        break;
+      case "available": {
+        const version = view.version ? `v${view.version}` : t("updater.update");
+        setState({
+          status: t("updater.versionAvailable", { version }),
+          button: t("updater.downloadInstall"),
+          canInstall: true,
+        });
+        setSidebarVisible(true);
+        break;
+      }
+      case "upToDate":
+        setState({ status: t("updater.upToDate"), button: t("updater.checkNow") });
+        setSidebarVisible(false);
+        break;
+      case "checkFailed":
+        setState({ status: t("updater.checkFailed"), button: t("updater.checkNow") });
+        break;
+      case "preparing":
+        setState({
+          status: t("updater.preparingDownload"),
+          button: t("updater.installing"),
+          disabled: true,
+        });
+        break;
+      case "downloading":
+        setState({
+          status: formatProgress(),
+          button: t("updater.installing"),
+          disabled: true,
+        });
+        break;
+      case "installing":
+        setState({
+          status: t("updater.installing"),
+          button: t("updater.installing"),
+          disabled: true,
+        });
+        break;
+      case "relaunching":
+        setState({
+          status: t("updater.installedRelaunching"),
+          button: t("updater.relaunching"),
+          disabled: true,
+        });
+        break;
+      case "installFailed":
+        setState({
+          status: t("updater.installFailed"),
+          button: t("updater.tryAgain"),
+          canInstall: true,
+        });
+        break;
+      default:
+        setState({ status: t("updater.clickToCheck"), button: t("updater.checkNow") });
+        setSidebarVisible(false);
+    }
+  }
+
   function setSidebarLoading(loading) {
     if (!sidebarBtn) return;
     if (loading) {
       sidebarBtn.classList.remove("hidden");
       sidebarBtn.classList.add("loading");
       sidebarBtn.disabled = true;
-      sidebarBtn.innerHTML = `${LOADING_SVG}Update`;
+      sidebarBtn.innerHTML = LOADING_SVG;
+      sidebarBtn.append(document.createTextNode(t("updater.update")));
     } else {
       sidebarBtn.classList.remove("loading");
       sidebarBtn.disabled = false;
-      sidebarBtn.textContent = "Update";
+      sidebarBtn.textContent = t("updater.update");
     }
   }
 
@@ -64,21 +136,23 @@ export function setupAppUpdater({ logger = console } = {}) {
   }
 
   function showIdle() {
-    setState({ status: "Click to check", button: "Check now" });
-    setSidebarVisible(false);
+    view = { kind: "idle" };
+    applyView();
   }
 
   function showAvailable(nextUpdate) {
-    const version = nextUpdate?.version ? `v${nextUpdate.version}` : "Update";
-    setState({ status: `${version} available`, button: "Download & install", canInstall: true });
-    setSidebarVisible(true);
+    view = { kind: "available", version: nextUpdate?.version };
+    applyView();
   }
 
   async function checkNow({ silent = false } = {}) {
     if (checking || installing) return update;
     checking = true;
     lastCheckMs = Date.now();
-    if (!silent) setState({ status: "Checking…", button: "Checking…", disabled: true });
+    if (!silent) {
+      view = { kind: "checking" };
+      applyView();
+    }
 
     try {
       const result = await checkCurrentChannel();
@@ -89,12 +163,15 @@ export function setupAppUpdater({ logger = console } = {}) {
         : null;
       if (update) showAvailable(update);
       else {
-        setState({ status: "Up to date", button: "Check now" });
-        setSidebarVisible(false);
+        view = { kind: "upToDate" };
+        applyView();
       }
       return update;
     } catch (error) {
-      if (!silent) setState({ status: "Check failed", button: "Check now" });
+      if (!silent) {
+        view = { kind: "checkFailed" };
+        applyView();
+      }
       logger.warn?.("[Updater] Check failed:", error);
       return null;
     } finally {
@@ -103,9 +180,9 @@ export function setupAppUpdater({ logger = console } = {}) {
   }
 
   function formatProgress() {
-    if (!totalBytes) return "Downloading…";
-    const percent = Math.min(99, Math.floor((downloadedBytes / totalBytes) * 100));
-    return `Downloading ${percent}%…`;
+    if (!totalBytes) return t("updater.downloading");
+    const pct = Math.min(99, Math.floor((downloadedBytes / totalBytes) * 100));
+    return t("updater.downloadingPct", { pct });
   }
 
   async function installUpdate() {
@@ -119,7 +196,8 @@ export function setupAppUpdater({ logger = console } = {}) {
     totalBytes = 0;
     downloadedBytes = 0;
     setSidebarLoading(true);
-    setState({ status: "Preparing download…", button: "Installing…", disabled: true });
+    view = { kind: "preparing" };
+    applyView();
 
     try {
       if (betaUpdatesEnabled()) {
@@ -129,23 +207,28 @@ export function setupAppUpdater({ logger = console } = {}) {
           if (event?.event === "Started") {
             totalBytes = event.data?.contentLength || 0;
             downloadedBytes = 0;
-            setState({ status: formatProgress(), button: "Installing…", disabled: true });
+            view = { kind: "downloading" };
+            applyView();
           } else if (event?.event === "Progress") {
             downloadedBytes += event.data?.chunkLength || 0;
-            setState({ status: formatProgress(), button: "Installing…", disabled: true });
+            view = { kind: "downloading" };
+            applyView();
           } else if (event?.event === "Finished") {
-            setState({ status: "Installing…", button: "Installing…", disabled: true });
+            view = { kind: "installing" };
+            applyView();
           }
         });
       }
-      setState({ status: "Installed. Relaunching…", button: "Relaunching…", disabled: true });
+      view = { kind: "relaunching" };
+      applyView();
       if (typeof relaunch !== "function") {
         throw new Error("Tauri process plugin is unavailable");
       }
       await relaunch();
     } catch (error) {
       logger.warn?.("[Updater] Install failed:", error);
-      setState({ status: "Install failed", button: "Try again", canInstall: true });
+      view = { kind: "installFailed" };
+      applyView();
       setSidebarLoading(false);
       setSidebarVisible(true);
     } finally {
@@ -176,6 +259,13 @@ export function setupAppUpdater({ logger = console } = {}) {
   });
 
   showIdle();
+  onLocaleChange(() => {
+    applyView();
+    if (sidebarBtn && !sidebarBtn.classList.contains("hidden")) {
+      if (sidebarBtn.classList.contains("loading")) setSidebarLoading(true);
+      else sidebarBtn.textContent = t("updater.update");
+    }
+  });
   void checkNow({ silent: true });
   scheduleSilentChecks();
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NativeFileBrowser, toggleExclusiveSidePanel } from "./file-browser.js";
+import { NativeFileBrowser } from "./file-browser.js";
 
 function deferred() {
   let resolve;
@@ -64,6 +64,48 @@ describe("NativeFileBrowser", () => {
     expect(browser.getParentPath()).toBe("");
   });
 
+  it("shows a mention button but does not break directory navigation", async () => {
+    const onMention = vi.fn();
+    const gateway = fakeGateway(async (_workspaceId, path) => {
+      if (path === "")
+        return {
+          entries: [
+            { name: "src", relativePath: "src", kind: "directory" },
+            { name: "a.ts", relativePath: "a.ts", kind: "file" },
+          ],
+        };
+      return { entries: [] };
+    });
+    const browser = new NativeFileBrowser(container, pathEl, gateway, "workspace-a", {
+      onMention,
+    });
+    await browser.load();
+
+    const buttons = container.querySelectorAll(".file-mention-btn");
+    expect(buttons.length).toBe(2);
+
+    // Clicking a directory's mention button navigates AND mentions (stopPropagation).
+    buttons[0].click();
+    expect(onMention).toHaveBeenCalledWith(
+      expect.objectContaining({ relativePath: "src", isDirectory: true }),
+    );
+    // Row navigation is not triggered when the mention button is clicked.
+    expect(browser.currentPath).toBe("");
+
+    // The file mention passes isDirectory: false.
+    buttons[1].click();
+    expect(onMention).toHaveBeenCalledWith(expect.objectContaining({ isDirectory: false }));
+  });
+
+  it("omits the mention button when no onMention handler is provided", async () => {
+    const gateway = fakeGateway(async () => ({
+      entries: [{ name: "a.ts", relativePath: "a.ts", kind: "file" }],
+    }));
+    const browser = new NativeFileBrowser(container, pathEl, gateway, "workspace-a");
+    await browser.load();
+    expect(container.querySelectorAll(".file-mention-btn").length).toBe(0);
+  });
+
   it("ignores a slower, superseded response so it can't overwrite a newer directory listing", async () => {
     const slow = deferred();
     const fast = deferred();
@@ -123,13 +165,11 @@ describe("NativeFileBrowser", () => {
     );
 
     await browser.load();
-    const diffButton = [...container.querySelectorAll(".file-browser-view-switch button")].find(
-      (button) => button.textContent === "Diff",
-    );
+    const diffButton = container.querySelector('[data-view="diff"]');
     diffButton.click();
     container.querySelector(".file-change-item").click();
 
-    expect(container.textContent).toContain("Changes");
+    expect(container.querySelector(".file-changes-heading")).not.toBeNull();
     expect(container.textContent).toContain("src/app.js");
     expect(onFileSelect).toHaveBeenCalledWith(
       expect.objectContaining({ relativePath: "src/app.js", mode: "diff" }),
@@ -160,32 +200,8 @@ describe("NativeFileBrowser", () => {
     expect(container.textContent).toContain("regular.js");
     expect(container.textContent).not.toContain("changed.js");
 
-    [...container.querySelectorAll(".file-browser-view-switch button")]
-      .find((button) => button.textContent === "Diff")
-      .click();
+    container.querySelector('[data-view="diff"]').click();
     expect(container.textContent).toContain("changed.js");
     expect(container.textContent).not.toContain("regular.js");
-  });
-});
-
-describe("toggleExclusiveSidePanel", () => {
-  it("opens one side panel while closing the other", () => {
-    const files = document.createElement("div");
-    const diff = document.createElement("div");
-    files.className = "collapsed";
-
-    expect(toggleExclusiveSidePanel(files, [diff])).toBe(true);
-    expect(files.classList.contains("collapsed")).toBe(false);
-    expect(diff.classList.contains("collapsed")).toBe(true);
-
-    expect(toggleExclusiveSidePanel(diff, [files])).toBe(true);
-    expect(diff.classList.contains("collapsed")).toBe(false);
-    expect(files.classList.contains("collapsed")).toBe(true);
-  });
-
-  it("closes the active panel when toggled again", () => {
-    const panel = document.createElement("div");
-    expect(toggleExclusiveSidePanel(panel)).toBe(false);
-    expect(panel.classList.contains("collapsed")).toBe(true);
   });
 });

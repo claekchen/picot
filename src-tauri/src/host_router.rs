@@ -5,21 +5,6 @@ use std::collections::HashMap;
 
 pub const PROTOCOL_VERSION: u64 = 2;
 
-const REMOTE_FORBIDDEN_HOST_OPERATIONS: &[&str] = &[
-    "pick_folder",
-    "open_app",
-    "install_package",
-    "remove_package",
-    "install_pi_package",
-    "remove_pi_package",
-    "update_package",
-    "check_for_updates",
-    "install_update",
-    "delete_workspace",
-    "open_workspace",
-    "delete_sessions",
-];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientKind {
     Desktop,
@@ -55,6 +40,11 @@ pub enum RoutedAction {
         target: Value,
     },
     Terminal {
+        client_id: String,
+        request_id: String,
+        frame: Value,
+    },
+    Git {
         client_id: String,
         request_id: String,
         frame: Value,
@@ -127,7 +117,7 @@ impl HostRouter {
     }
 
     pub fn route(&self, client_id: &str, frame: &Value) -> Result<RoutedAction, RouterError> {
-        let client_kind = self.client_kind(client_id).ok_or_else(|| {
+        self.client_kind(client_id).ok_or_else(|| {
             RouterError::new("unauthorized_client", "Client has not completed handshake")
         })?;
         let frame_type = frame
@@ -142,13 +132,20 @@ impl HostRouter {
             .to_owned();
 
         match frame_type {
-            "terminal_command" => {
-                if client_kind != ClientKind::Desktop {
+            "git_command" | "git_ai_commit_message" => {
+                if frame.get("workspaceId").and_then(Value::as_str).is_none() {
                     return Err(RouterError::new(
-                        "remote_operation_forbidden",
-                        "Remote clients cannot use local terminals",
+                        "invalid_git_command",
+                        "workspaceId is required",
                     ));
                 }
+                Ok(RoutedAction::Git {
+                    client_id: client_id.to_owned(),
+                    request_id,
+                    frame: frame.clone(),
+                })
+            }
+            "terminal_command" => {
                 if frame.get("workspaceId").and_then(Value::as_str).is_none()
                     || !frame.get("payload").is_some_and(Value::is_object)
                 {
@@ -177,12 +174,6 @@ impl HostRouter {
             "runtime_request" | "runtime_snapshot_request" | "runtime_capabilities_request" => {
                 if frame_type == "runtime_request" {
                     validate_runtime_request(frame)?;
-                    if client_kind == ClientKind::Remote && is_picot_config_prompt(frame) {
-                        return Err(RouterError::new(
-                            "remote_operation_forbidden",
-                            "Remote clients cannot invoke Picot configuration operations",
-                        ));
-                    }
                 }
                 Ok(RoutedAction::Runtime {
                     client_id: client_id.to_owned(),
@@ -198,14 +189,6 @@ impl HostRouter {
                         .ok_or_else(|| {
                             RouterError::new("invalid_host_request", "operation is required")
                         })?;
-                if client_kind == ClientKind::Remote
-                    && REMOTE_FORBIDDEN_HOST_OPERATIONS.contains(&operation)
-                {
-                    return Err(RouterError::new(
-                        "remote_operation_forbidden",
-                        "Remote clients cannot invoke this Host operation",
-                    ));
-                }
                 Ok(RoutedAction::Host {
                     client_id: client_id.to_owned(),
                     request_id,
@@ -229,13 +212,6 @@ impl HostRouter {
             )),
         }
     }
-}
-
-fn is_picot_config_prompt(frame: &Value) -> bool {
-    frame
-        .pointer("/command/message")
-        .and_then(Value::as_str)
-        .is_some_and(|message| message.trim_start().starts_with("/picot-config "))
 }
 
 fn validate_runtime_request(frame: &Value) -> Result<(), RouterError> {
@@ -366,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn forbids_dangerous_host_operations_for_remote_clients() {
+    fn allows_previously_dangerous_host_operations_for_remote_clients() {
         let mut router = HostRouter::new();
         router
             .connect(
@@ -392,12 +368,12 @@ mod tests {
                         "operation": operation,
                     }),
                 )
-                .is_err());
+                .is_ok());
         }
     }
 
     #[test]
-    fn forbids_picot_config_commands_for_remote_clients() {
+    fn allows_git_commands_for_remote_clients() {
         let mut router = HostRouter::new();
         router
             .connect(
@@ -405,23 +381,19 @@ mod tests {
                 &json!({ "type": "hello", "protocolVersion": 2, "clientType": "remote" }),
             )
             .unwrap();
-        let error = router
-            .route(
-                "phone",
-                &json!({
-                    "type": "runtime_request",
-                    "requestId": "r1",
-                    "idempotencyKey": "i1",
-                    "target": { "workspaceId": "w", "sessionId": "s", "instanceId": "i" },
-                    "command": { "type": "prompt", "message": "/picot-config {}" }
-                }),
-            )
-            .unwrap_err();
-        assert_eq!(error.code, "remote_operation_forbidden");
+        let command = router.route(
+            "phone",
+            &json!({
+                "type": "git_command",
+                "requestId": "git-1",
+                "workspaceId": "workspace-a",
+            }),
+        );
+        assert!(matches!(command, Ok(RoutedAction::Git { .. })));
     }
 
     #[test]
-    fn routes_terminal_commands_only_for_desktop_clients() {
+    fn routes_terminal_commands_for_desktop_and_remote_clients() {
         let mut router = HostRouter::new();
         for (client_id, client_type) in [("window", "desktop"), ("phone", "remote")] {
             router
@@ -445,9 +417,9 @@ mod tests {
             router.route("window", &command),
             Ok(RoutedAction::Terminal { .. })
         ));
-        assert_eq!(
-            router.route("phone", &command).unwrap_err().code,
-            "remote_operation_forbidden"
-        );
+        assert!(matches!(
+            router.route("phone", &command),
+            Ok(RoutedAction::Terminal { .. })
+        ));
     }
 }

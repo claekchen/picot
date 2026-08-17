@@ -6,19 +6,26 @@ import { t } from "../i18n.js";
 const CHEVRON_ICON =
   '<svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" aria-hidden="true"><path d="M2 1l4 3-4 3z"/></svg>';
 
+const CHECK_ICON =
+  '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M1.5 5.2l2.5 2.5 4.5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
 /**
  * Build a collapsed-by-default "Process details" group. Callers append
  * process content (thinking blocks, tool cards) into `body`, then call
  * `setLabel` once the final counts are known.
+ *
+ * `setStreaming(true)` marks the group as live (pulsing label, matching the
+ * "thinking" shimmer other chat UIs use while a turn is in flight);
+ * `markDone()` stops the pulse and shows a green checkmark once it settles.
  */
-export function createProcessDetailsGroup() {
+export function createProcessDetailsGroup({ expanded = false } = {}) {
   const wrapper = document.createElement("div");
-  wrapper.className = "process-details-group";
+  wrapper.className = `process-details-group${expanded ? " expanded" : ""}`;
 
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "process-details-toggle";
-  toggle.setAttribute("aria-expanded", "false");
+  toggle.setAttribute("aria-expanded", String(expanded));
 
   const chevron = document.createElement("span");
   chevron.className = "chevron";
@@ -27,7 +34,11 @@ export function createProcessDetailsGroup() {
   const label = document.createElement("span");
   label.className = "process-details-label";
 
-  toggle.append(chevron, label);
+  const check = document.createElement("span");
+  check.className = "process-details-check";
+  check.innerHTML = CHECK_ICON;
+
+  toggle.append(chevron, label, check);
 
   const body = document.createElement("div");
   body.className = "process-details-body";
@@ -45,7 +56,25 @@ export function createProcessDetailsGroup() {
     setLabel(text) {
       label.textContent = text;
     },
+    setStreaming(isStreaming) {
+      wrapper.classList.toggle("streaming", isStreaming);
+      if (isStreaming) wrapper.classList.remove("done");
+    },
+    markDone() {
+      wrapper.classList.remove("streaming");
+      wrapper.classList.add("done");
+    },
   };
+}
+
+/** Capture expanded groups by DOM order before history rendering replaces them. */
+export function captureExpandedProcessGroups(container) {
+  const expanded = new Set();
+  const groups = container.querySelectorAll(":scope > .process-details-group");
+  groups.forEach((group, index) => {
+    if (group.classList.contains("expanded")) expanded.add(index);
+  });
+  return expanded;
 }
 
 /** Build the localized "Process details · N steps · M tool calls" summary line. */

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ConfigGateway } from "./config-gateway.js";
+import { ConfigGateway, consumeConfigResponseFrame } from "./config-gateway.js";
 
 function createHarness() {
   const requests = [];
@@ -57,6 +57,25 @@ describe("ConfigGateway", () => {
     await expect(promise).resolves.toEqual({ ok: true, data: { providers: [] } });
   });
 
+  it("consumes a config response carried by a background runtime frame", async () => {
+    const { requests, gateway } = createHarness();
+    const promise = gateway.call("generate_session_title");
+    const id = idFromRequest(requests[0]);
+
+    const consumed = consumeConfigResponseFrame(gateway, {
+      type: "runtime_event",
+      target: { workspaceId: "w", sessionId: "background-s", instanceId: "background-i" },
+      event: {
+        type: "extension_ui_request",
+        method: "notify",
+        message: JSON.stringify({ __picotConfig: id, ok: true, data: { title: "Done" } }),
+      },
+    });
+
+    expect(consumed).toBe(true);
+    await expect(promise).resolves.toEqual({ ok: true, data: { title: "Done" } });
+  });
+
   it("ignores notifications that are not config responses", () => {
     const { gateway } = createHarness();
     expect(gateway.consumeNotify({ message: "hello world" })).toBe(false);
@@ -87,7 +106,7 @@ describe("ConfigGateway", () => {
     vi.useFakeTimers();
     try {
       const { gateway } = createHarness();
-      const promise = gateway.call("list_model_catalog", {}, { timeoutMs: 1000 });
+      const promise = gateway.call("generate_session_title", {}, { timeoutMs: 1000 });
       const assertion = expect(promise).rejects.toThrow("timed out");
       await vi.advanceTimersByTimeAsync(1000);
       await assertion;

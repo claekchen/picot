@@ -34,28 +34,6 @@ Picot ships a known-good build of the `pi` runtime **inside the .app bundle**, s
 
 You **do not** need to install the `pi` CLI separately — Picot bundles its own pi runtime.
 
-### macOS unsigned release notice
-
-Picot currently ships macOS builds without Apple Developer ID signing/notarization. Expected Gatekeeper behavior:
-
-`"Picot" cannot be opened because the developer cannot be verified.`
-
-**To allow it:**
-
-1. Drag `Picot.app` into `/Applications`
-2. Right-click → **Open**
-3. If blocked: **System Settings → Privacy & Security → Open Anyway**
-
-<p align="center">
-  <img width="420" alt="macOS Gatekeeper warning" src="docs/images/gatekeeper-warning.webp" />
-</p>
-
-Then click **Done**:
-
-<p align="center">
-  <img width="960" alt="Allow app in macOS security settings" src="docs/images/gatekeeper-allow.webp" />
-</p>
-
 ---
 
 ## Quick Start
@@ -87,19 +65,10 @@ Provide your model credentials via `pi /login` inside any workspace, or by writi
 - Copy any message with one click
 - Scroll-to-bottom button with unread indicator
 - **Message queuing** — type while the agent is working; messages queue as pills and auto-send when ready
-- **`@` file mentions** — type `@` in any composer to search and insert a file-path reference (workspace, `../`, `~/`, or absolute); shared across Main, Side, and Quick Chat
+- **`@` file mentions** — type `@` in any composer to search and insert a file-path reference (workspace, `../`, `~/`, or absolute)
 - **Conversation turn navigator** — Codex-style dot rail beside the chat; hover a dot for a preview, click to jump to that turn
 - **Command palette** — quick access to Compact, Expand/Collapse All Tools, Settings, and Help
 - **Fork from any message** — branch a new session off any point in the conversation
-
-</details>
-
-<details>
-<summary><strong>⚡ Temporary chats</strong></summary>
-
-- **Side Chat** keeps tools available in an isolated, unsaved Pi process for the current workspace; open up to five as tabs alongside file tabs in the right panel — the panel stays open while any Side Chat tab remains, and collapses only when both file and Side Chat tabs are closed.
-- **Quick Chat** is a single non-modal, tool-free, unsaved chat. Open it from the icon directly after the sidebar search field.
-- Both compose with the same model selector, thinking-level control, voice input, and icon controls as the primary chat. They are available only in authenticated desktop windows, never through mobile or LAN access.
 
 </details>
 
@@ -111,8 +80,7 @@ Provide your model credentials via `pi /login` inside any workspace, or by writi
 - Full-text search across all session history with highlighted snippets
 - Sessions sorted by creation time; live session marked with a green dot
 - Inline session rename, favourites, tags, and filtering
-- **Workspace Focus** — use the arrow on the current workspace to switch the left sidebar into a task view, including before a new task has created its first saved session
-- **Safe individual deletion** — delete a session from Focus or ARCHIVED; running sessions are refused by the server
+- **Safe individual deletion** — delete a session from the sidebar or ARCHIVED; running sessions are refused by the server
 - **RECENT** — a cross-workspace, most-recently-used list keeps the last five visited sessions at the top of the sidebar
 
 </details>

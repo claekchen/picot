@@ -185,6 +185,38 @@ describe("picot config skills operations", () => {
   });
 });
 
+describe("picot config models operations", () => {
+  it("saves models.json even when registry refresh does not finish", async () => {
+    const { home, handlePicotConfig } = await loadConfigWithTempHome();
+    const modelsPath = join(home, ".pi", "agent", "models.json");
+    const registry = {
+      refresh: vi.fn(() => new Promise(() => undefined)),
+    };
+    const content = JSON.stringify({ providers: { local: { models: [{ id: "qwen" }] } } });
+
+    vi.useFakeTimers();
+    try {
+      const result = handlePicotConfig(
+        "write_models_config",
+        { content },
+        { modelRegistry: registry },
+      );
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(result).resolves.toEqual({
+        ok: true,
+        data: { path: modelsPath, refreshed: false },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(registry.refresh).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(readFileSync(modelsPath, "utf8"))).toEqual({
+      providers: { local: { models: [{ id: "qwen" }] } },
+    });
+  });
+});
+
 describe("picot config auth operations", () => {
   it("stores and removes API keys without requiring registry authStorage", async () => {
     vi.stubEnv("HOME", "");

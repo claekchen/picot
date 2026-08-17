@@ -49,12 +49,25 @@ export class HostDataGateway {
     if (!READ_OPERATIONS.has(operation)) {
       throw new Error(`Unsupported read-only data operation: ${operation}`);
     }
+    const traceSessionLoad = operation === "read_session_messages";
+    const startedAt = performance.now();
+    if (traceSessionLoad) {
+      console.info("[SESSION-LOAD] disk request waiting for Host connection", {
+        sessionId: parameters.sessionId,
+      });
+    }
     if (typeof this.#adapter.ready === "function") {
       await this.#withTimeout(
         this.#adapter.ready(),
         this.#hostReadyTimeoutMs,
         "Host connection timed out before the data request could start",
       );
+    }
+    if (traceSessionLoad) {
+      console.info("[SESSION-LOAD] Host ready; sending disk request", {
+        sessionId: parameters.sessionId,
+        elapsedMs: Math.round(performance.now() - startedAt),
+      });
     }
     const requestId = `data-${this.#nextRequestId++}`;
     const generation = this.#generation;
@@ -66,7 +79,15 @@ export class HostDataGateway {
           reject(new Error("Host data request timed out"));
         }, this.#dataRequestTimeoutMs);
       }
-      this.#pending.set(requestId, { resolve, reject, generation, timeout });
+      this.#pending.set(requestId, {
+        resolve,
+        reject,
+        generation,
+        timeout,
+        operation,
+        sessionId: parameters.sessionId,
+        startedAt,
+      });
       try {
         this.#adapter.send({
           type: "data_request",
@@ -165,6 +186,14 @@ export class HostDataGateway {
     if (!pending || pending.generation !== this.#generation) return;
     this.#pending.delete(frame.requestId);
     if (pending.timeout) clearTimeout(pending.timeout);
+    if (pending.operation === "read_session_messages") {
+      console.info("[SESSION-LOAD] disk response received", {
+        sessionId: pending.sessionId,
+        messageCount: frame?.messages?.length ?? 0,
+        elapsedMs: Math.round(performance.now() - pending.startedAt),
+        failed: Boolean(frame.error),
+      });
+    }
     if (frame.error) pending.reject(new Error(frame.error.message ?? String(frame.error)));
     else pending.resolve(frame);
   }

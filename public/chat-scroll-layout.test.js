@@ -26,4 +26,16 @@ describe("chat scroll layout", () => {
     expect(ruleBody(".message .message-content")).toContain("max-width: 100%");
     expect(ruleBody(".message-content")).toContain("overflow-wrap: anywhere");
   });
+
+  test("keeps every rendered turn row at its natural height so small overflows can scroll", () => {
+    expect(ruleBody(".message")).toContain("flex-shrink: 0");
+    expect(ruleBody(".process-details-group")).toContain("flex-shrink: 0");
+  });
+
+  test("uses a flex item for the composer inset so WebKit includes it in scroll overflow", () => {
+    expect(ruleBody(".messages")).toContain("padding-bottom: 0");
+    expect(ruleBody(".messages::after")).toContain("content:");
+    expect(ruleBody(".messages::after")).toContain("flex-shrink: 0");
+    expect(ruleBody(".messages::after")).toContain("flex-basis:");
+  });
 });

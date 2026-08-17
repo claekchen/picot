@@ -50,6 +50,81 @@ function collectBareImports(entryPath) {
   return [...bareImports].sort();
 }
 
+const NAMED_IMPORT = /^import\s+(?:[\w$]+\s*,\s*)?\{([^}]+)\}\s+from\s+["'](\.[^"']+)["']/gm;
+
+function parseImportedNames(clause) {
+  return clause
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) =>
+      part
+        .replace(/^type\s+/, "")
+        .split(/\s+as\s+/)[0]
+        .trim(),
+    )
+    .filter(Boolean);
+}
+
+function collectExportedNames(source) {
+  const names = new Set();
+  for (const match of source.matchAll(
+    /^export\s+(?:async\s+)?(?:function|class|const|let|var)\s+([\w$]+)/gm,
+  )) {
+    names.add(match[1]);
+  }
+  for (const match of source.matchAll(/^export\s+\{([^}]+)\}/gm)) {
+    for (const part of match[1].split(",")) {
+      const bits = part.trim().split(/\s+as\s+/);
+      const exported = (bits[1] || bits[0]).trim();
+      if (exported) names.add(exported);
+    }
+  }
+  return names;
+}
+
+function collectMissingNamedImports(entryPath) {
+  const pending = [entryPath];
+  const visited = new Set();
+  const missing = [];
+
+  while (pending.length > 0) {
+    const filePath = pending.pop();
+    if (visited.has(filePath)) continue;
+    visited.add(filePath);
+
+    const source = readFileSync(filePath, "utf8");
+    for (const match of source.matchAll(NAMED_IMPORT)) {
+      const importedPath = resolve(dirname(filePath), match[2]);
+      if (!importedPath.endsWith(".js") || !existsSync(importedPath)) continue;
+      const exported = collectExportedNames(readFileSync(importedPath, "utf8"));
+      for (const name of parseImportedNames(match[1])) {
+        if (!exported.has(name)) {
+          missing.push(`${filePath} imports '${name}' from ${importedPath}`);
+        }
+      }
+      pending.push(importedPath);
+    }
+    for (const match of source.matchAll(STATIC_IMPORT)) {
+      const importedPath = resolve(dirname(filePath), match[1]);
+      if (existsSync(importedPath) && importedPath.endsWith(".js")) pending.push(importedPath);
+    }
+  }
+
+  return missing;
+}
+
+function firstImportAfterTopLevelAwait(filePath) {
+  const source = readFileSync(filePath, "utf8");
+  const awaitMatch = source.match(/^await\s/m);
+  if (!awaitMatch) return null;
+  const afterAwait = source.slice(awaitMatch.index);
+  const lateImport = afterAwait.match(/^import\s/m);
+  if (!lateImport) return null;
+  const line = source.slice(0, awaitMatch.index + lateImport.index).split("\n").length;
+  return line;
+}
+
 describe("native application module graph", () => {
   it("only loads module entry points that exist", () => {
     const publicDir = resolve(process.cwd(), "public");
@@ -67,6 +142,18 @@ describe("native application module graph", () => {
     const entryPath = resolve(process.cwd(), "public/native/app.js");
 
     expect(collectMissingImports(entryPath)).toEqual([]);
+  });
+
+  it("imports only names that the target module exports", () => {
+    const entryPath = resolve(process.cwd(), "public/native/app.js");
+
+    expect(collectMissingNamedImports(entryPath)).toEqual([]);
+  });
+
+  it("declares every static import before the first top-level await", () => {
+    const entryPath = resolve(process.cwd(), "public/native/app.js");
+
+    expect(firstImportAfterTopLevelAwait(entryPath)).toBeNull();
   });
 
   it("maps every browser package import to a same-origin vendor bundle", () => {

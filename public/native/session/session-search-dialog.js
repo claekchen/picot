@@ -161,7 +161,7 @@ export function setupSessionSearchDialog({
       : sessions.slice(0, MAX_RECENT_RESULTS);
 
     appendGroup(
-      normalized ? "Tasks" : "Recent tasks",
+      normalized ? t("sidebar.searchTasks") : t("sidebar.recentTasks"),
       titleMatches.map((session) =>
         resultButton({
           sessionId: session.id,
@@ -173,13 +173,16 @@ export function setupSessionSearchDialog({
     );
 
     appendGroup(
-      "Message matches",
+      t("sidebar.messageMatches"),
       messageMatches.map((result) =>
         resultButton({
           sessionId: result.sessionId,
           icon: "⌕",
-          title: result.sessionName || result.firstMessage || "Untitled",
-          meta: result.matches?.length > 1 ? `${result.matches.length} matches` : "Message match",
+          title: result.sessionName || result.firstMessage || t("sidebar.untitled"),
+          meta:
+            result.matches?.length > 1
+              ? t("sidebar.matchCount", { count: result.matches.length })
+              : t("sidebar.messageMatch"),
           snippet: result.matches?.[0]?.snippet || "",
         }),
       ),

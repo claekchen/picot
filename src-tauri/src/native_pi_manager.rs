@@ -25,6 +25,13 @@ pub struct NativeLaunchSpec {
     pub extensions: Vec<PathBuf>,
     pub pi_version: String,
     pub path_env: String,
+    /// When true, spawn `pi --approve`: the desktop owner trusts the chosen
+    /// workspace's project-local resources (.pi/settings.json, .agents/skills,
+    /// project extensions) for this run. Picot's workspace is opened via the OS
+    /// folder picker, so the user has already opted in; pi's non-interactive
+    /// rpc mode otherwise leaves the project untrusted even when a saved
+    /// decision exists in ~/.pi/agent/trust.json.
+    pub approve: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +49,9 @@ impl NativeLaunchSpec {
             args.push(extension.to_string_lossy().into_owned());
         }
         args.extend(["--mode".into(), "rpc".into()]);
+        if self.approve {
+            args.push("--approve".into());
+        }
         if let Some(session_path) = &self.session_path {
             args.push("--session".into());
             args.push(session_path.to_string_lossy().into_owned());
@@ -381,6 +391,44 @@ impl NativePiManager {
         }
     }
 
+    /// Stop the runtime for `target` and spawn a fresh one that resumes the same
+    /// session, returning the new instance id. Used to pick up extension/package
+    /// changes without leaving the app. Falls back to a no-op returning the
+    /// existing instance id when the target is not currently running.
+    pub fn restart(
+        &self,
+        target: &RuntimeTarget,
+        spec: NativeLaunchSpec,
+    ) -> Result<String, String> {
+        let existing = self
+            .inner
+            .runtimes
+            .lock()
+            .map_err(|_| "Native runtime registry lock poisoned".to_string())?
+            .values()
+            .find_map(|runtime| {
+                runtime.target.lock().ok().map(|t| t.clone()).filter(|t| {
+                    t.workspace_id == target.workspace_id && t.session_id == target.session_id
+                })
+            });
+
+        let Some(existing) = existing else {
+            // Not currently running — nothing to restart.
+            return Ok(target.instance_id.clone());
+        };
+
+        self.stop(&existing)?;
+
+        let new_instance = format!("instance-{}", uuid::Uuid::new_v4().simple());
+        let fresh = RuntimeTarget::new(
+            existing.workspace_id.clone(),
+            existing.session_id.clone(),
+            new_instance.clone(),
+        );
+        self.spawn(fresh, spec)?;
+        Ok(new_instance)
+    }
+
     pub fn target_for_session(
         &self,
         workspace_id: &str,
@@ -594,6 +642,7 @@ mod tests {
             extensions: vec![PathBuf::from("/extensions/picot-bridge.mjs")],
             pi_version: env!("PI_STUDIO_PI_VERSION_BUNDLED").into(),
             path_env: "/usr/bin".into(),
+            approve: false,
         };
         let launch = spec.command_description();
         assert_eq!(launch.program, PathBuf::from("/embedded/pi"));
@@ -607,6 +656,23 @@ mod tests {
             .args
             .iter()
             .any(|argument| argument.parse::<u16>().is_ok()));
+    }
+
+    #[test]
+    fn approve_flag_appends_dash_dash_approve_arg() {
+        let spec = NativeLaunchSpec {
+            binary: PathBuf::from("/embedded/pi"),
+            cwd: PathBuf::from("/workspace"),
+            session_path: None,
+            extensions: vec![],
+            pi_version: env!("PI_STUDIO_PI_VERSION_BUNDLED").into(),
+            path_env: "/usr/bin".into(),
+            approve: true,
+        };
+        assert!(spec
+            .command_description()
+            .args
+            .contains(&"--approve".to_string()));
     }
 
     #[tokio::test]

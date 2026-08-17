@@ -1,6 +1,6 @@
-// ABOUTME: Native-owner-only Terminal Panel: DOM, tab bar, collapse/expand,
-// ABOUTME: height clamp, workspace checkpoint/reattach, and close-risk participant.
-// ABOUTME: Remote/LAN/mobile clients render no terminal surface at all.
+// ABOUTME: Terminal Panel: DOM, tab bar, collapse/expand, height clamp,
+// ABOUTME: workspace checkpoint/reattach, and close-risk participant.
+// ABOUTME: Rendered for desktop and remote/LAN/mobile clients alike.
 
 import { t } from "./i18n.js";
 

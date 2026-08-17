@@ -115,6 +115,25 @@ export async function generateTitleForSession(
   const transcript = buildTitleTranscript(entries);
   if (!transcript.includes("User:")) throw new Error("The session has no user messages to name");
 
+  return generateTitleFromTranscript(transcript, runtime);
+}
+
+export async function generateTitleForPrompt(
+  prompt: string,
+  runtime: GenerateTitleRuntime,
+): Promise<string> {
+  const text = prompt.trim();
+  if (!text) throw new Error("The prompt is empty");
+  const transcript = buildTitleTranscript([
+    { type: "message", message: { role: "user", content: text } },
+  ]);
+  return generateTitleFromTranscript(transcript, runtime);
+}
+
+async function generateTitleFromTranscript(
+  transcript: string,
+  runtime: GenerateTitleRuntime,
+): Promise<string> {
   const { session } = await createAgentSession({
     ...(runtime.model ? { model: runtime.model } : {}),
     thinkingLevel: "off",

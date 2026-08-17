@@ -43,6 +43,7 @@ const CHEVRON_ICON =
   '<svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor" aria-hidden="true"><path d="M2 1l4 3-4 3z"/></svg>';
 const BRAIN_ICON =
   '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px" aria-hidden="true"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v13"/><path d="M6.5 9h11"/><path d="M7 13h10"/></svg>';
+const AUTO_SCROLL_BOTTOM_TOLERANCE = 1;
 
 export class MessageRenderer {
   constructor(container) {
@@ -54,10 +55,9 @@ export class MessageRenderer {
     initImageLightbox(this.container);
 
     this._scrollHandler = () => {
-      const threshold = 100;
       this.isNearBottom =
-        this.container.scrollHeight - this.container.scrollTop - this.container.clientHeight <
-        threshold;
+        this.container.scrollHeight - this.container.scrollTop - this.container.clientHeight <=
+        AUTO_SCROLL_BOTTOM_TOLERANCE;
     };
     this.container.addEventListener("scroll", this._scrollHandler);
 

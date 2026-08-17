@@ -9,11 +9,11 @@ describe("super-agent-entry compatibility", () => {
     vi.restoreAllMocks();
   });
 
-  it("delegates clicks to the pinned Super Agent session instead of opening a workspace", async () => {
-    const pinnedClick = vi.fn();
-    document.body.innerHTML =
-      '<div class="super-agent-pinned-group"><div class="session-item"></div></div>';
-    document.querySelector(".session-item").addEventListener("click", pinnedClick);
+  it("dispatches the Agent Inbox navigation event instead of opening a workspace", async () => {
+    const openAgentInbox = vi.fn();
+    const openRuntime = vi.fn();
+    document.addEventListener("sa-open-agent-inbox", openAgentInbox);
+    document.addEventListener("sa-open-runtime", openRuntime);
     const transport = {
       newSession: vi.fn(),
       openWorkspace: vi.fn(),
@@ -29,7 +29,8 @@ describe("super-agent-entry compatibility", () => {
 
     await entry._open();
 
-    expect(pinnedClick).toHaveBeenCalledTimes(1);
+    expect(openAgentInbox).toHaveBeenCalledTimes(1);
+    expect(openRuntime).toHaveBeenCalledTimes(1);
     expect(transport.newSession).not.toHaveBeenCalled();
     expect(transport.openWorkspace).not.toHaveBeenCalled();
   });

@@ -35,7 +35,7 @@ class SuperAgentEntry extends HTMLElement {
   }
 
   async _open() {
-    document.querySelector(".super-agent-pinned-group .session-item")?.click();
+    document.dispatchEvent(new CustomEvent("sa-open-agent-inbox"));
     document.dispatchEvent(new CustomEvent("sa-open-runtime", { detail: { filter: "pending" } }));
   }
 }

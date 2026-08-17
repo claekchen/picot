@@ -1,4 +1,4 @@
-import { t } from "../i18n.js";
+import { onLocaleChange, t } from "../i18n.js";
 import { isSuperAgentEnabled, setSuperAgentEnabled } from "../super-agent/settings.js";
 
 /**
@@ -17,63 +17,67 @@ class ChatSettingsPanel extends HTMLElement {
       <div class="settings-body">
         <div class="settings-section">
           <div class="settings-section-title chat-settings-title-row">
-            Agent Inbox
-            <span class="ui-badge chat-settings-beta-badge">Beta</span>
+            <span data-i18n="settings.agentInbox">Agent Inbox</span>
+            <span class="ui-badge chat-settings-beta-badge" data-i18n="inbox.beta">Beta</span>
           </div>
           <div class="settings-row" id="setting-super-agent">
             <span class="settings-label settings-label-stack">
-              <span class="settings-label-main">Start automatically</span>
-              <span class="settings-label-sub">Launch Agent Inbox when Picot opens</span>
+              <span class="settings-label-main" data-i18n="inbox.startAutomatically">Start automatically</span>
+              <span class="settings-label-sub" data-i18n="inbox.launchOnOpen">Launch Agent Inbox when Picot opens</span>
             </span>
             <button class="settings-toggle" id="toggle-super-agent"></button>
           </div>
         </div>
 
         <div class="settings-section">
-          <div class="settings-section-title">Telegram</div>
+          <div class="settings-section-title" data-i18n="inbox.telegram">Telegram</div>
           <p class="settings-help">
-            Paste a Telegram bot token from <code>@BotFather</code>. Picot will detect your
-            Telegram DM automatically after you send <code>/start</code> to the bot.
+            <span data-i18n="inbox.tokenHelpPre">Paste a Telegram bot token from</span>
+            <code>@BotFather</code>
+            <span data-i18n="inbox.tokenHelpMid">. Picot will detect your Telegram DM automatically after you send</span>
+            <code>/start</code>
+            <span data-i18n="inbox.tokenHelpPost">to the bot.</span>
           </p>
-          <p class="settings-help telegram-safety-note">
+          <p class="settings-help telegram-safety-note" data-i18n="inbox.safety">
             Telegram messages enter Agent Inbox first. Picot keeps project-agent dispatch
             behind local approval.
           </p>
           <div class="telegram-setup-card">
-            <label class="telegram-token-label" for="telegram-bot-token">Bot token</label>
+            <label class="telegram-token-label" for="telegram-bot-token" data-i18n="inbox.botToken">Bot token</label>
             <div class="telegram-token-row">
               <input id="telegram-bot-token" class="ui-input telegram-token-input"
                 data-token-input type="password" autocomplete="off" spellcheck="false"
-                placeholder="123456:ABCDEF…" />
-              <button class="ui-button ui-button--primary" data-action="connect-telegram">Connect Telegram</button>
-              <button class="ui-button ui-button--secondary" data-action="cancel-telegram" hidden>Cancel</button>
+                placeholder="123456:ABCDEF…" data-i18n-ph="inbox.tokenPlaceholder" />
+              <button class="ui-button ui-button--primary" data-action="connect-telegram" data-i18n="inbox.connectTelegram">Connect Telegram</button>
+              <button class="ui-button ui-button--secondary" data-action="cancel-telegram" hidden data-i18n="actions.cancel">Cancel</button>
             </div>
             <div class="settings-save-status hidden" data-status aria-live="polite" role="status"></div>
             <div class="telegram-bind-instructions hidden" data-bind-instructions></div>
           </div>
           <div class="telegram-doctor-card" data-telegram-doctor>
             <div class="chat-account-header">
-              <span class="chat-account-name">Telegram Doctor</span>
-              <button class="ui-button ui-button--secondary" data-action="run-telegram-doctor">Run Doctor</button>
+              <span class="chat-account-name" data-i18n="inbox.telegramDoctor">Telegram Doctor</span>
+              <button class="ui-button ui-button--secondary" data-action="run-telegram-doctor" data-i18n="inbox.runDoctor">Run Doctor</button>
             </div>
-            <div class="settings-help" data-telegram-doctor-summary>Not checked yet.</div>
+            <div class="settings-help" data-telegram-doctor-summary data-i18n="inbox.notCheckedYet">Not checked yet.</div>
             <div class="telegram-doctor-checks" data-telegram-doctor-checks></div>
           </div>
           <div class="chat-accounts-list" data-accounts-list></div>
         </div>
 
         <details class="settings-section chat-advanced-config" hidden>
-          <summary class="settings-section-title">Advanced Raw Config</summary>
+          <summary class="settings-section-title" data-i18n="inbox.advancedRawConfig">Advanced Raw Config</summary>
           <p class="settings-help">
-            Internal config stored in <code>~/.pi/agent/chat/config.json</code>. You normally do not
-            need to edit this manually.
+            <span data-i18n="inbox.advancedHelpPre">Internal config stored in</span>
+            <code data-i18n="inbox.chatConfigPath">~/.pi/agent/chat/config.json</code>
+            <span data-i18n="inbox.advancedHelpPost">. You normally do not need to edit this manually.</span>
           </p>
           <textarea class="ui-textarea config-editor-textarea settings-config-textarea"
             data-textarea spellcheck="false" autocomplete="off"
-            autocorrect="off" autocapitalize="off" placeholder="Loading…"></textarea>
+            autocorrect="off" autocapitalize="off" placeholder="Loading…" data-i18n-ph="files.loading"></textarea>
           <div class="settings-config-actions">
             <div class="settings-config-button-group">
-              <button class="ui-button ui-button--primary" data-action="save">Save Raw Config</button>
+              <button class="ui-button ui-button--primary" data-action="save" data-i18n="inbox.saveRawConfig">Save Raw Config</button>
             </div>
           </div>
         </details>
@@ -116,6 +120,10 @@ class ChatSettingsPanel extends HTMLElement {
 
     this._handleConfigGatewayReady = () => this._load();
     window.addEventListener("picot-config-gateway-ready", this._handleConfigGatewayReady);
+    this._unsubscribeLocale = onLocaleChange(() => {
+      this._renderAccounts(this._textarea?.value);
+      if (this._lastDoctorReport) this._renderTelegramDoctor(this._lastDoctorReport);
+    });
     this._load();
   }
 
@@ -123,6 +131,7 @@ class ChatSettingsPanel extends HTMLElement {
     if (this._handleConfigGatewayReady) {
       window.removeEventListener("picot-config-gateway-ready", this._handleConfigGatewayReady);
     }
+    this._unsubscribeLocale?.();
   }
 
   // ── Super Agent toggle ──────────────────────────────────────────────────
@@ -163,7 +172,7 @@ class ChatSettingsPanel extends HTMLElement {
     try {
       JSON.parse(content);
     } catch {
-      this._showError("Invalid JSON");
+      this._showError(t("inbox.invalidJson"));
       return;
     }
     this._clearStatus();
@@ -172,7 +181,7 @@ class ChatSettingsPanel extends HTMLElement {
     try {
       await writeChatConfig(content);
       this._renderAccounts(content);
-      this._showSuccess("Saved raw config.");
+      this._showSuccess(t("inbox.savedRawConfig"));
       await this._loadTelegramDoctor();
     } catch (e) {
       this._showError(messageFromError(e));
@@ -184,7 +193,7 @@ class ChatSettingsPanel extends HTMLElement {
   async _connectTelegram() {
     const botToken = this._tokenInput.value.trim();
     if (!botToken) {
-      this._showError("Paste your Telegram bot token first.");
+      this._showError(t("inbox.pasteTokenFirst"));
       this._tokenInput.focus();
       return;
     }
@@ -196,11 +205,11 @@ class ChatSettingsPanel extends HTMLElement {
     this._clearBindInstructions();
 
     try {
-      this._showInfo("Validating Telegram bot token…");
+      this._showInfo(t("inbox.validatingToken"));
       const validated = await telegramValidate({ botToken }, { signal: controller.signal });
       const bot = validated.bot || {};
       this._renderBindInstructions(bot);
-      this._showInfo("Bot connected. Send /start to the bot in Telegram to finish setup.");
+      this._showInfo(t("inbox.botConnectedSendStart"));
 
       const bound = await telegramBind(
         { botToken, afterUpdateId: validated.afterUpdateId },
@@ -209,13 +218,13 @@ class ChatSettingsPanel extends HTMLElement {
       this._setRawContent(bound.content || "{}");
       this._renderAccounts(bound.content);
       this._tokenInput.value = "";
-      this._showSuccess("Telegram connected. Only the detected DM user is authorized.");
+      this._showSuccess(t("inbox.telegramConnected"));
       this._clearBindInstructions();
       await this._loadTelegramDoctor();
       window.dispatchEvent(new CustomEvent("picot-chat-config-updated"));
     } catch (e) {
       if (controller.signal.aborted) {
-        this._showInfo("Telegram setup canceled.");
+        this._showInfo(t("inbox.setupCanceled"));
       } else {
         this._showError(messageFromError(e));
       }
@@ -233,7 +242,7 @@ class ChatSettingsPanel extends HTMLElement {
   }
 
   async _disconnectTelegram() {
-    if (!window.confirm("Disconnect Telegram from Picot?")) return;
+    if (!window.confirm(t("inbox.disconnectConfirm"))) return;
     try {
       const config = JSON.parse(this._textarea.value || "{}");
       const accounts = Object.entries(config.accounts || {}).filter(
@@ -244,7 +253,7 @@ class ChatSettingsPanel extends HTMLElement {
       await writeChatConfig(content);
       this._setRawContent(content);
       this._renderAccounts(content);
-      this._showSuccess("Telegram disconnected.");
+      this._showSuccess(t("inbox.disconnected"));
       await this._loadTelegramDoctor();
       window.dispatchEvent(new CustomEvent("picot-chat-config-updated"));
     } catch (e) {
@@ -261,6 +270,7 @@ class ChatSettingsPanel extends HTMLElement {
     this._doctorChecksEl.innerHTML = "";
     try {
       const { report } = await telegramDoctor();
+      this._lastDoctorReport = report;
       this._renderTelegramDoctor(report);
     } catch (e) {
       this._doctorSummaryEl.textContent = messageFromError(e);
@@ -273,7 +283,11 @@ class ChatSettingsPanel extends HTMLElement {
   _renderTelegramDoctor(report) {
     const summary = report?.summary || "error";
     const label =
-      summary === "ready" ? "Ready" : summary === "warning" ? "Needs attention" : "Not ready";
+      summary === "ready"
+        ? t("inbox.ready")
+        : summary === "warning"
+          ? t("inbox.needsAttention")
+          : t("inbox.notReady");
     this._doctorSummaryEl.textContent = label;
     this._doctorChecksEl.innerHTML = (report?.checks || [])
       .map(
@@ -290,35 +304,39 @@ class ChatSettingsPanel extends HTMLElement {
   // ── Render accounts list ──────────────────────────────────────────────────
 
   _renderAccounts(rawContent) {
+    if (!this._accountsEl) return;
     try {
       const config = JSON.parse(rawContent || "{}");
       const accountEntry = Object.entries(config.accounts || {}).find(
         ([, account]) => account?.service === "telegram",
       );
       if (!accountEntry) {
-        this._accountsEl.innerHTML = `<p class="settings-help">Telegram is not connected.</p>`;
-        this._tokenInput.placeholder = "123456:ABCDEF...";
-        this.querySelector('[data-action="connect-telegram"]').textContent = "Connect Telegram";
+        this._accountsEl.innerHTML = `<p class="settings-help">${esc(t("inbox.notConnected"))}</p>`;
+        this._tokenInput.placeholder = t("inbox.tokenPlaceholder");
+        this.querySelector('[data-action="connect-telegram"]').textContent =
+          t("inbox.connectTelegram");
         return;
       }
 
       const [id, account] = accountEntry;
       const dm = Object.values(account.channels || {}).find((channel) => channel?.dm === true);
       const botName = account.botUsername ? `@${account.botUsername}` : account.name || id;
-      const authorizedUser = dm?.name || dm?.access?.allowedUserIds?.[0] || dm?.id || "Detected DM";
+      const authorizedUser =
+        dm?.name || dm?.access?.allowedUserIds?.[0] || dm?.id || t("inbox.detectedDm");
       this._tokenInput.placeholder = t(
         "migrated.components.chatSettingsPanel.placeholder.pasteANewTokenToReconnect",
       );
-      this.querySelector('[data-action="connect-telegram"]').textContent = "Reconnect Telegram";
+      this.querySelector('[data-action="connect-telegram"]').textContent =
+        t("inbox.reconnectTelegram");
       this._accountsEl.innerHTML = `
         <div class="chat-account-card">
           <div class="chat-account-header">
             <span class="chat-account-name">${esc(botName)}</span>
           </div>
-          <div class="chat-account-detail">Authorized DM: ${esc(authorizedUser)}</div>
-          <div class="chat-account-detail">Internal ID: <code>${esc(id)}</code></div>
+          <div class="chat-account-detail">${esc(t("inbox.authorizedDm", { user: authorizedUser }))}</div>
+          <div class="chat-account-detail">${esc(t("inbox.internalId"))} <code>${esc(id)}</code></div>
           <div class="chat-account-actions">
-            <button class="ui-button ui-button--danger" data-action="disconnect-telegram">Disconnect</button>
+            <button class="ui-button ui-button--danger" data-action="disconnect-telegram">${esc(t("inbox.disconnect"))}</button>
           </div>
         </div>
       `;
@@ -331,14 +349,14 @@ class ChatSettingsPanel extends HTMLElement {
     const username = bot.username;
     const link = bot.webUrl || (username ? `https://web.telegram.org/k/#@${username}` : "");
     this._bindInstructionsEl.innerHTML = `
-      <div class="telegram-bind-title">Waiting for your Telegram DM…</div>
+      <div class="telegram-bind-title">${esc(t("inbox.waitingForDm"))}</div>
       <ol class="telegram-bind-steps">
-        <li>Open ${username ? `<code>@${esc(username)}</code>` : "the bot"} in Telegram.</li>
-        <li>Send <code>/start</code> in the private chat.</li>
+        <li>${esc(username ? t("inbox.openBot", { bot: `@${username}` }) : t("inbox.openTheBot"))}</li>
+        <li>${esc(t("inbox.sendStartStep"))}</li>
       </ol>
       ${
         link
-          ? `<a class="ui-button ui-button--secondary telegram-open-link" href="${escAttr(link)}" target="_blank" rel="noreferrer">Open Telegram</a>`
+          ? `<a class="ui-button ui-button--secondary telegram-open-link" href="${escAttr(link)}" target="_blank" rel="noreferrer">${esc(t("inbox.openTelegram"))}</a>`
           : ""
       }
     `;

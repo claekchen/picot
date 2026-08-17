@@ -15,7 +15,7 @@ beforeEach(async () => {
         ok: true,
         json: async () => ({
           messages: { copied: "Copied!" },
-          nav: { newSideChat: "New Side Chat" },
+          nav: {},
           files: {
             preview: {
               close: "Close",
@@ -488,20 +488,6 @@ describe("FilePreviewPanel", () => {
     p.destroy();
   });
 
-  test("renders the New Side Chat tab action as a localized icon button", () => {
-    const p = createPanel();
-    p.registerTabBarAction("new-side-chat", {
-      labelKey: "nav.newSideChat",
-      icon: "chat-plus",
-      onClick: vi.fn(),
-    });
-    const action = tabBar.querySelector('[data-action-id="new-side-chat"]');
-    expect(action.getAttribute("aria-label")).toBe("New Side Chat");
-    expect(action.querySelector("svg")).not.toBeNull();
-    expect(action.textContent.trim()).toBe("");
-    p.destroy();
-  });
-
   test("setWorkspaceRoot loads persisted tabs", () => {
     // Simulate persisted tabs from a previous session.
     const tabsData = {
@@ -550,91 +536,7 @@ describe("FilePreviewPanel", () => {
   });
 });
 
-describe("FilePreviewPanel transient tabs", () => {
-  test("registerTransientTab renders a tab before file tabs", async () => {
-    const p = createPanel();
-    await p.openFile("/test/workspace/a.txt", { fileName: "a.txt" });
-    p.registerTransientTab({
-      id: "sc1",
-      title: "Side Chat",
-      status: "ready",
-      contentElement: document.createElement("div"),
-      onActivate: () => {},
-      onDeactivate: () => {},
-      onRequestClose: () => {},
-    });
-    const transientTabs = tabBar.querySelectorAll('.file-preview-tab[data-transient-id="sc1"]');
-    expect(transientTabs.length).toBe(1);
-    // Transient tab is rendered before any file tab.
-    const firstTab = tabBar.querySelector(".file-preview-tab");
-    expect(firstTab.dataset.transientId).toBe("sc1");
-    p.destroy();
-  });
-
-  test("activateContent shows the transient content and fires onActivate", () => {
-    const p = createPanel();
-    const body = document.createElement("div");
-    body.textContent = "side chat body";
-    let activated = false;
-    p.registerTransientTab({
-      id: "sc1",
-      title: "Side Chat",
-      status: "ready",
-      contentElement: body,
-      onActivate: () => {
-        activated = true;
-      },
-      onDeactivate: () => {},
-      onRequestClose: () => {},
-    });
-    p.activateContent({ kind: "transient", id: "sc1" });
-    expect(activated).toBe(true);
-    expect(content.contains(body)).toBe(true);
-    p.destroy();
-  });
-
-  test("the transient close button calls onRequestClose", () => {
-    const p = createPanel();
-    let requested = false;
-    p.registerTransientTab({
-      id: "sc1",
-      title: "Side Chat",
-      status: "ready",
-      contentElement: document.createElement("div"),
-      onActivate: () => {},
-      onDeactivate: () => {},
-      onRequestClose: () => {
-        requested = true;
-      },
-    });
-    tabBar
-      .querySelector('.file-preview-tab[data-transient-id="sc1"] .file-preview-tab-close')
-      .click();
-    expect(requested).toBe(true);
-    p.destroy();
-  });
-
-  test("unregisterTransientTab removes the tab and deactivates it", () => {
-    const p = createPanel();
-    let deactivated = false;
-    p.registerTransientTab({
-      id: "sc1",
-      title: "Side Chat",
-      status: "ready",
-      contentElement: document.createElement("div"),
-      onActivate: () => {},
-      onDeactivate: () => {
-        deactivated = true;
-      },
-      onRequestClose: () => {},
-    });
-    p.activateContent({ kind: "transient", id: "sc1" });
-    p.unregisterTransientTab("sc1");
-    expect(tabBar.querySelector('.file-preview-tab[data-transient-id="sc1"]')).toBeFalsy();
-    expect(deactivated).toBe(true);
-    p.destroy();
-  });
-
+describe("FilePreviewPanel close and visibility", () => {
   test("getCloseRisk reports dirty file tabs with a monotonic version", () => {
     const p = createPanel();
     const first = p.getCloseRisk();
@@ -652,86 +554,7 @@ describe("FilePreviewPanel transient tabs", () => {
     p.destroy();
   });
 
-  // Regression: file DOM must not linger in the content area after switching
-  // to a Side Chat (transient) tab. Leftover .file-code-editor nodes are
-  // height:100% and overlap the appended Side Chat view inside the
-  // overflow:hidden content container, making the Side Chat invisible.
-  test("switching from a file tab to a transient tab clears leftover file DOM", async () => {
-    const p = createPanel();
-    await p.openFile("/test/workspace/main.js");
-    expect(content.querySelectorAll(".file-code-editor").length).toBe(1);
-
-    const body = document.createElement("div");
-    body.className = "ephemeral-chat-view";
-    body.textContent = "side chat body";
-    p.registerTransientTab({
-      id: "sc1",
-      title: "Side Chat",
-      status: "ready",
-      contentElement: body,
-      onActivate: () => {},
-      onDeactivate: () => {},
-      onRequestClose: () => {},
-    });
-    p.activateContent({ kind: "transient", id: "sc1" });
-
-    expect(content.contains(body)).toBe(true);
-    expect(content.children.length).toBe(1);
-    expect(content.firstChild).toBe(body);
-    expect(content.querySelectorAll(".file-code-editor").length).toBe(0);
-    p.destroy();
-  });
-
-  test("switching back to a transient tab after opening a file restores it", async () => {
-    const p = createPanel();
-    const body = document.createElement("div");
-    body.className = "ephemeral-chat-view";
-    body.textContent = "side chat body";
-    p.registerTransientTab({
-      id: "sc1",
-      title: "Side Chat",
-      status: "ready",
-      contentElement: body,
-      onActivate: () => {},
-      onDeactivate: () => {},
-      onRequestClose: () => {},
-    });
-    p.activateContent({ kind: "transient", id: "sc1" });
-    await p.openFile("/test/workspace/main.js");
-    expect(content.contains(body)).toBe(false);
-
-    p.activateContent({ kind: "transient", id: "sc1" });
-
-    expect(content.contains(body)).toBe(true);
-    expect(content.children.length).toBe(1);
-    expect(content.firstChild).toBe(body);
-    p.destroy();
-  });
-
-  // Regression: closing the last file tab must not collapse the panel while a
-  // Side Chat (transient) tab still exists — the panel should switch to it.
-  test("closing the last file tab keeps the panel open when a transient tab remains", async () => {
-    const p = createPanel();
-    p.registerTransientTab({
-      id: "sc1",
-      title: "Side Chat",
-      status: "ready",
-      contentElement: document.createElement("div"),
-      onActivate: () => {},
-      onDeactivate: () => {},
-      onRequestClose: () => {},
-    });
-    await p.openFile("/test/workspace/main.js");
-
-    await p._closeTab(p.state.getActiveTab().id);
-
-    expect(panel.classList.contains("collapsed")).toBe(false);
-    expect(p.activeContent).toEqual({ kind: "transient", id: "sc1" });
-    expect(p.state.getTabs().length).toBe(0);
-    p.destroy();
-  });
-
-  test("closing the last file tab still closes the panel with no transient tab", async () => {
+  test("closing the last file tab closes the panel", async () => {
     const p = createPanel();
     await p.openFile("/test/workspace/main.js");
 
@@ -845,6 +668,55 @@ describe("FilePreviewPanel workspace restore", () => {
     expect(p.hasPersistedTabs("/ws/empty")).toBe(false);
     // Peeking must not load tabs into the active state.
     expect(p.state.getTabs().length).toBe(0);
+    p.destroy();
+  });
+});
+
+describe("FilePreviewPanel git diff tabs", () => {
+  test("openDiff mounts a diff renderer and sets activeContent", () => {
+    const p = createPanel();
+    const id = p.openDiff({
+      displayPath: "src/main.js",
+      comparison: "changes",
+      rawPatch:
+        "--- a/src/main.js\n+++ b/src/main.js\n@@ -1,1 +1,2 @@\n-old line\n+new line\n+added line",
+    });
+
+    expect(id).toBe("git-diff");
+    expect(p.activeContent).toEqual({ kind: "diff", id: "git-diff" });
+    expect(p.diffTabs.has("git-diff")).toBe(true);
+    // The diff renderer should have mounted content into the panel.
+    expect(content.children.length).toBeGreaterThan(0);
+    expect(panel.classList.contains("collapsed")).toBe(false);
+    p.destroy();
+  });
+
+  test("closeDiffTab removes the tab and deactivates", () => {
+    const p = createPanel();
+    p.openDiff({
+      displayPath: "src/main.js",
+      comparison: "changes",
+      rawPatch: "test patch",
+    });
+
+    expect(p.diffTabs.size).toBe(1);
+    const result = p.closeDiffTab("git-diff");
+    expect(result).toBe(true);
+    expect(p.diffTabs.has("git-diff")).toBe(false);
+    p.destroy();
+  });
+
+  test("openDiff renders a diff tab in the tab bar", () => {
+    const p = createPanel();
+    p.openDiff({
+      displayPath: "src/app.ts",
+      comparison: "staged",
+      rawPatch: "test",
+    });
+
+    const diffTab = tabBar.querySelector('[data-diff-id="git-diff"]');
+    expect(diffTab).not.toBeNull();
+    expect(diffTab.classList.contains("diff-tab")).toBe(true);
     p.destroy();
   });
 });

@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { handlePicotConfig } from "./picot-config";
 import projectTrust from "./project-trust";
+import { registerAutomaticSessionTitle } from "./session-title-auto";
 
 type ConfigRequest = {
   id?: string;
@@ -10,6 +11,7 @@ type ConfigRequest = {
 
 export default function picotBridge(pi: ExtensionAPI) {
   projectTrust(pi);
+  registerAutomaticSessionTitle(pi);
 
   // Configuration data plane. Invoked by the WebView via a native RPC prompt
   // (`/picot-config <json>`); extension commands run immediately without
