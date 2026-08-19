@@ -29,10 +29,13 @@ import { setupComposerSubmitHandling } from "./composer/composer-submit.js";
 import { renderQueuedMessages } from "./composer/queued-messages.js";
 import { buildCommandCatalog, resolveComposerInput } from "./composer/slash-commands.js";
 import { setupCommandPalette } from "./extensions/command-palette.js";
+import { CustomUiPanel } from "./extensions/custom-ui-panel.js";
 import { showNativeDialog } from "./extensions/dialog.js";
 import { ExtensionUiHost } from "./extensions/extension-ui-host.js";
+import { ExtensionWidgets } from "./extensions/extension-widgets.js";
 import { showInlineExtensionPrompt } from "./extensions/inline-extension-prompt.js";
 import { setupAppUpdater } from "./features/app-updater.js";
+import { createFilePreviewFollow } from "./features/file-preview-follow.js";
 import { setupGitPanel } from "./features/git-panel-integration.js";
 import { refreshLanQrButton, setupLanQr } from "./features/lan-qr.js";
 import { resolveRemoteAuth } from "./features/remote-auth.js";
@@ -315,9 +318,29 @@ const config = new ConfigGateway({
   waitUntilReady: () => (configGatewayTargetReady ? Promise.resolve() : configGatewayReady),
 });
 window.__picotConfigCall = (op, params, options) => config.call(op, params, options);
+const customUiPanel = new CustomUiPanel({
+  runtime,
+  getTarget: () => target,
+  onError: showError,
+});
+const extensionWidgets = new ExtensionWidgets({
+  aboveEditor: document.getElementById("extension-widgets-above"),
+  belowEditor: document.getElementById("extension-widgets-below"),
+});
 const contextUsage = setupContextUsage();
 const compactContextButton = document.getElementById("compact-context-btn");
 const filePreviewPanel = setupFilePreviewPanel();
+const filePreviewFollow = createFilePreviewFollow({
+  panel: filePreviewPanel,
+  getWorkspacePath: async () => {
+    try {
+      const response = await data.workspaceInfo(target.workspaceId);
+      return response?.info?.path ?? "";
+    } catch {
+      return "";
+    }
+  },
+});
 const gitPanel = setupGitPanel({
   runtime,
   getTarget: () => target,
@@ -459,10 +482,15 @@ const extensionUi = new ExtensionUiHost({
       // Configuration data-plane responses arrive as notify events; swallow
       // them so they don't render as chat messages.
       if (config.consumeNotify(request)) return;
+      // Custom extension UI panels (ctx.ui.custom) are bridged over notify too;
+      // they render as an overlay rather than a transcript entry.
+      if (customUiPanel.consumeNotify(request)) return;
       // rpiv-todo's /todos command emits a centered notify transcript. Picot
       // already mirrors the same state natively, so expand the panel instead
-      // of rendering a duplicate system message.
-      if (isRpivTodoCommandNotify(request.message)) {
+      // of rendering a duplicate system message. When nothing is mirrored (the
+      // panel stays hidden, e.g. "No todos yet"), fall through and render the
+      // message so /todos is never a silent no-op.
+      if (isRpivTodoCommandNotify(request.message) && todoMirrorPanel.hasVisibleTasks) {
         todoMirrorPanel.expand();
         return;
       }
@@ -481,6 +509,9 @@ const extensionUi = new ExtensionUiHost({
       // rpiv-todo owns the tool/reducer; Picot renders a native mirror from
       // the persisted todo tool-result snapshots instead of the TUI widget.
       if (isRpivTodoWidgetRequest(request)) return;
+      // Everything else falls back to the generic renderer, so an extension
+      // that publishes a status panel is not silently dropped.
+      extensionWidgets.apply(request);
     },
   },
 });
@@ -699,6 +730,10 @@ setupComposerSubmitHandling({
   },
 });
 abortButton?.addEventListener("click", abortCurrentRun);
+messagesElement.addEventListener("previewfile", (event) => {
+  const path = event.detail?.path;
+  if (path) void filePreviewFollow.openPath(path).catch(showError);
+});
 messagesElement.addEventListener("messagefork", async (event) => {
   const { entryId } = event.detail;
   try {
@@ -1713,6 +1748,7 @@ async function handleRuntimeEvent(event) {
       break;
     case "tool_execution_start":
       toolRenderer.createToolCard({ ...event, status: "pending" });
+      filePreviewFollow.onToolStart(event);
       break;
     case "tool_execution_update":
       toolRenderer.updateToolCard({
@@ -1725,6 +1761,7 @@ async function handleRuntimeEvent(event) {
       toolRenderer.finalizeToolCard(event.toolCallId, event.result, event.isError);
       if (event.toolName === "todo" && !event.isError)
         todoMirrorPanel.applyToolResult(event.result);
+      void filePreviewFollow.onToolEnd(event).catch(showError);
       break;
     case "extension_ui_request":
       await extensionUi.handle(target, event);
@@ -1784,6 +1821,11 @@ async function adoptTarget(nextTarget, { updateRoute = true } = {}) {
   snapshotInFlight = false;
   renderQueuedMessages(queuedMessages, store.queue);
   todoMirrorPanel.clear();
+  // Widgets and any open custom-UI panel belong to the session that published
+  // them; carrying them across a switch would show another session's state.
+  extensionWidgets.clear();
+  customUiPanel.close({ notifyExtension: false });
+  filePreviewFollow.clear();
   streamingElement = null;
   liveProcessGroup = null;
   adapter.subscribeTarget(target);

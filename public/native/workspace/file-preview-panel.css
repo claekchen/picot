@@ -424,6 +424,23 @@ body.file-preview-resizing {
   background: var(--bg);
 }
 
+.file-html-preview {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg-solid);
+}
+
+.file-html-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  /* design-token-ignore: live HTML preview mimics a browser canvas */
+  background: #fff;
+}
+
 .file-image-img {
   /* design-token-ignore: preview media needs a readable content-width cap */
   max-width: min(100%, 640px);

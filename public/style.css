@@ -30,6 +30,8 @@
 @import url("native/notifications/notification-center.css");
 @import url("native/extensions/dialog.css");
 @import url("native/extensions/inline-extension-prompt.css");
+@import url("native/extensions/custom-ui-panel.css");
+@import url("native/extensions/extension-widgets.css");
 @import url("native/settings/thinking-effort-control.css");
 @import url("native/sidebar.css");
 @import url("native/header.css");
@@ -147,9 +149,9 @@ body {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-0);
   min-height: 0;
-  padding: var(--space-2);
+  padding: var(--space-1-5) var(--space-2);
   overflow: auto;
 }
 .file-sidebar-tabs {
@@ -173,16 +175,20 @@ body {
 }
 .git-panel-toolbar {
   display: flex;
+  flex: none;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-1-5);
+  margin: 0 0 var(--space-1);
+  padding: var(--space-1-5) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--bg-glass-strong) 88%, transparent);
 }
 .git-panel-details {
   min-width: 0;
+  flex: 1 1 auto;
 }
 .git-panel-summary,
 .git-panel-stats {
@@ -193,18 +199,21 @@ body {
 }
 .git-panel-summary {
   color: var(--text-primary);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
+  line-height: 1.25;
 }
 .git-panel-stats {
-  margin-top: 0.125rem;
+  margin-top: var(--space-0-5);
   color: var(--text-secondary);
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
+  line-height: 1.25;
 }
 .git-panel-toolbar-actions,
 .git-group-actions {
   display: flex;
   flex: none;
+  flex-wrap: nowrap;
   gap: var(--space-1);
 }
 .git-panel-refresh,
@@ -216,9 +225,11 @@ body {
   color: var(--text-primary);
   cursor: pointer;
   font: inherit;
-  font-size: 0.75rem;
-  line-height: 1.25;
-  padding: var(--space-1) var(--space-1-5);
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  min-height: var(--control-height-xs);
+  padding: 0 var(--space-1-5);
+  white-space: nowrap;
 }
 .git-panel-refresh:hover,
 .git-group-actions button:hover {
@@ -236,9 +247,8 @@ body {
   cursor: not-allowed;
   opacity: 0.45;
 }
-.git-panel section {
+.git-group + .git-group {
   border-top: 1px solid var(--border);
-  padding-top: var(--space-1);
 }
 .git-panel section > button,
 .git-entry {
@@ -249,17 +259,28 @@ body {
   cursor: pointer;
 }
 /* Git group headings reuse the Session List section-header treatment so both
-   sidebars share one disclosure-arrow + muted-label vocabulary. */
-.git-group-heading {
+   sidebars share one disclosure-arrow + muted-label vocabulary. Spacing is
+   heading padding only — session-list headers add margin-top, and a border on
+   every <section> used to make space above each label larger than below. */
+.git-group-heading.sidebar-section-header {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1-5) var(--space-1-5);
-  margin-top: 14px;
+  min-height: var(--control-height-xs);
+  padding: var(--space-1) var(--space-2);
+  margin: 0;
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
+  line-height: 1.25;
   cursor: pointer;
   user-select: none;
+}
+.git-group-heading .sidebar-section-count {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
 }
 .git-tree-row {
   display: flex;
@@ -267,7 +288,8 @@ body {
   width: 100%;
   min-width: 0;
   gap: var(--space-2);
-  padding: var(--space-2);
+  min-height: var(--control-height-sm);
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: var(--font-size-md);
@@ -509,9 +531,7 @@ body {
   padding: 0.5rem;
 }
 .git-group-actions {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.25rem 0;
+  padding: var(--space-1) var(--space-2);
 }
 .git-directory {
   margin-left: 0;
@@ -534,9 +554,9 @@ body {
   background: var(--accent-subtle);
 }
 .git-truncation-notice {
-  font-size: 0.75rem;
+  font-size: var(--font-size-sm);
   opacity: 0.7;
-  padding: 0.25rem 0;
+  padding: var(--space-1) var(--space-1-5);
 }
 .file-sidebar {
   width: var(--panel-width, var(--file-sidebar-width));

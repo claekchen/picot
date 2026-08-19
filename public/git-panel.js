@@ -9,7 +9,7 @@ function createSectionChevron() {
   const chevron = document.createElement("span");
   chevron.className = "section-chevron";
   chevron.setAttribute("aria-hidden", "true");
-  chevron.append(createIcon("chevron-down", { size: 16 }));
+  chevron.append(createIcon("chevron-right", { size: 16 }));
   return chevron;
 }
 

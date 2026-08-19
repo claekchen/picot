@@ -80,8 +80,10 @@ describe("GitPanel", () => {
     expect(header.classList.contains("sidebar-section-header")).toBe(true);
     expect(header.getAttribute("role")).toBe("button");
     expect(header.getAttribute("aria-expanded")).toBe("true");
-    expect(header.querySelector(".section-chevron")).not.toBeNull();
-    expect(header.querySelector("svg")).not.toBeNull();
+    const chevron = header.querySelector(".section-chevron");
+    expect(chevron).not.toBeNull();
+    expect(chevron.querySelector("svg")).not.toBeNull();
+    expect(chevron.querySelector("polyline")?.getAttribute("points")).toBe("9 6 15 12 9 18");
     expect(header.querySelector(".sidebar-section-title")?.textContent).toBe("Staged");
     expect(header.querySelector(".sidebar-section-count")?.textContent).toBe("0");
   });

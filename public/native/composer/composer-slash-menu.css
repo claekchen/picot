@@ -12,12 +12,10 @@
   padding: var(--space-2);
   overflow-y: auto;
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--bg-solid) 94%, transparent);
+  background: var(--bg-solid);
   border: 1px solid var(--border-hover);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(calc(var(--blur) * 1.5));
-  -webkit-backdrop-filter: blur(calc(var(--blur) * 1.5));
 }
 
 .skill-slash-heading {
@@ -77,8 +75,12 @@
 }
 
 .skill-slash-scope {
+  max-width: 40%;
+  overflow: hidden;
   color: var(--text-dim);
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .skill-slash-empty {

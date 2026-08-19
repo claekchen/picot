@@ -209,6 +209,21 @@ export class FilePreviewPanel {
     return tab;
   }
 
+  /**
+   * Open a file the agent just wrote. Reloads an existing clean tab so the
+   * live preview (including HTML iframes) picks up disk changes; leaves a
+   * dirty tab alone aside from focusing it.
+   */
+  async revealWrite(filePath) {
+    const normalizedPath = normalizeLocalPath(filePath);
+    if (!normalizedPath) return null;
+    const existing = this.state.getTabs().find((tab) => tab.filePath === normalizedPath);
+    if (existing?.dirty) return this.openFile(normalizedPath);
+    const tab = await this.openFile(normalizedPath);
+    if (existing) await this._reloadTab(existing.id, { skipConfirmation: true });
+    return tab;
+  }
+
   async closePanel() {
     this._captureActiveRenderer();
     const dirtyTabs = this.state.getTabs().filter((tab) => tab.dirty);
@@ -1266,7 +1281,7 @@ export class FilePreviewPanel {
       contentType !== "image" &&
       contentType !== "pdf" &&
       contentType !== "convertible" &&
-      (contentType !== "markdown" || tab.mode === "edit");
+      ((contentType !== "markdown" && contentType !== "html") || tab.mode === "edit");
 
     const hasDiff = tab
       ? this.gitDiffCache.has(tab.id) && this.gitDiffCache.get(tab.id) !== null
