@@ -277,3 +277,7 @@ Picot is a maintained fork of **Tau**, adapted for Pi-first, local development w
 ## License
 
 MIT
+
+
+## Sponsor
+[![Github-sponsors](https://img.shields.io/badge/sponsor-%2330363D.svg?style=for-the-badge&logo=GitHub-Sponsors&logoColor=#EA4AAA)](https://github.com/sponsors/shixin-guo/button)
