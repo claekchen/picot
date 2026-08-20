@@ -59,7 +59,9 @@ const MAX_WS_MESSAGE_BYTES: usize = 16 * 1024 * 1024;
 fn fingerprint_static_dir(static_dir: &std::path::Path) -> String {
     use sha2::{Digest, Sha256};
     fn walk(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
-        let Ok(entries) = fs::read_dir(dir) else { return };
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
@@ -75,7 +77,9 @@ fn fingerprint_static_dir(static_dir: &std::path::Path) -> String {
 
     let mut hasher = Sha256::new();
     for path in &files {
-        let Ok(meta) = fs::metadata(path) else { continue };
+        let Ok(meta) = fs::metadata(path) else {
+            continue;
+        };
         if let Ok(relative) = path.strip_prefix(static_dir) {
             hasher.update(relative.to_string_lossy().as_bytes());
         }

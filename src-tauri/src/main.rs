@@ -625,8 +625,17 @@ fn agent_inbox_path() -> Result<PathBuf, String> {
         .ok_or_else(|| "Cannot resolve home directory for Agent Inbox".to_string())
 }
 
+/// Encode a cwd the same way pi does for `~/.pi/agent/sessions/<dir>/`.
+/// Leading `/` or `\` is stripped, then `/`, `\`, and `:` become `-`, so a
+/// Windows path like `C:\Users\me\.pi\agent\super-agent` becomes
+/// `--C--Users-me-.pi-agent-super-agent--` instead of a name containing `:`.
 fn session_dir_name(cwd: &Path) -> String {
-    format!("--{}--", cwd.to_string_lossy().replace(['/', '\\'], "-"))
+    let raw = cwd.to_string_lossy();
+    let stripped = raw
+        .strip_prefix('/')
+        .or_else(|| raw.strip_prefix('\\'))
+        .unwrap_or(raw.as_ref());
+    format!("--{}--", stripped.replace(['/', '\\', ':'], "-"))
 }
 
 fn now_unix_millis() -> u128 {
@@ -983,9 +992,9 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_static_dir, select_fresh_startup_target};
+    use super::{resolve_static_dir, select_fresh_startup_target, session_dir_name};
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_temp_dir(label: &str) -> PathBuf {
@@ -1016,6 +1025,22 @@ mod tests {
 
         assert_eq!(resolved, fs::canonicalize(&workspace_public).unwrap());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn session_dir_name_matches_pi_encoding_on_unix_and_windows_paths() {
+        assert_eq!(
+            session_dir_name(Path::new("/Users/me/.pi/agent/super-agent")),
+            "--Users-me-.pi-agent-super-agent--"
+        );
+        assert_eq!(
+            session_dir_name(Path::new(r"C:\Users\me\.pi\agent\super-agent")),
+            "--C--Users-me-.pi-agent-super-agent--"
+        );
+        assert!(
+            !session_dir_name(Path::new(r"C:\Users\me\.pi\agent\super-agent")).contains(':'),
+            "Windows session folders cannot contain a drive colon"
+        );
     }
 
     #[test]
