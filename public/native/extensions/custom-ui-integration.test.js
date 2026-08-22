@@ -49,7 +49,7 @@ describe("custom UI end to end", () => {
 
   it("renders a panel emitted by the bridge and keeps it out of the transcript", async () => {
     const runtime = { request: vi.fn().mockResolvedValue({}) };
-    const panel = new CustomUiPanel({ runtime, getTarget: () => target });
+    const panel = new CustomUiPanel({ runtime, getTarget: () => target, enabled: true });
     const renderSystemMessage = vi.fn();
 
     const host = new ExtensionUiHost({
@@ -73,6 +73,32 @@ describe("custom UI end to end", () => {
     expect(document.querySelectorAll(".custom-ui-overlay")).toHaveLength(1);
     expect(renderSystemMessage).not.toHaveBeenCalled();
     expect(FakeTerminal.instances[0].writes.at(-1)).toContain("╭── MCP ──╮");
+  });
+
+  it("does not open an overlay in the production default (disabled) path", async () => {
+    const runtime = { request: vi.fn().mockResolvedValue({}) };
+    const panel = new CustomUiPanel({ runtime, getTarget: () => target });
+    const renderSystemMessage = vi.fn();
+
+    const host = new ExtensionUiHost({
+      runtime,
+      hooks: {
+        notify: (request) => {
+          if (panel.consumeNotify(request)) return;
+          renderSystemMessage(request.message || "");
+        },
+      },
+    });
+    await host.setForegroundSession(target.sessionId);
+
+    await host.handle(
+      target,
+      bridgeNotifyFrame({ op: "open", id: "panel-1", width: 82, lines: ["╭── MCP ──╮"] }),
+    );
+
+    expect(panel.isOpen).toBe(false);
+    expect(document.querySelectorAll(".custom-ui-overlay")).toHaveLength(0);
+    expect(renderSystemMessage).not.toHaveBeenCalled();
   });
 
   it("still renders ordinary notifications as system messages", async () => {

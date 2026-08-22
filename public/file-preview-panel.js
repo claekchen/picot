@@ -15,6 +15,7 @@ import { createFileRenderer } from "./file-preview-renderers.js";
 import { FileTabState } from "./file-tab-state.js";
 import { createGitDiffRenderer } from "./git-diff-renderer.js";
 import { onLocaleChange, t } from "./i18n.js";
+import { createLoadingPlaceholder } from "./ui/loading-placeholder.js";
 import { normalizeLocalPath } from "./workspace/path-utils.js";
 
 const AUTO_SAVE_DELAY = 1500;
@@ -904,10 +905,12 @@ export class FilePreviewPanel {
     this.content.replaceChildren();
 
     if (tab.loading) {
-      const loadingEl = document.createElement("div");
-      loadingEl.className = "file-preview-loading";
-      loadingEl.textContent = t("files.preview.loading");
-      this.content.appendChild(loadingEl);
+      this.content.appendChild(
+        createLoadingPlaceholder({
+          className: "file-preview-loading",
+          label: t("files.preview.loading"),
+        }),
+      );
       this._renderToolbar();
       return;
     }

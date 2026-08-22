@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { registerCustomUiBridge } from "./custom-ui-bridge";
+import { CUSTOM_UI_OVERLAY_ENABLED, registerCustomUiBridge } from "./custom-ui-bridge";
 
 const ESCAPE = String.fromCharCode(27);
 
@@ -10,7 +10,7 @@ type Frame = { op: string; id: string; lines?: string[]; width?: number; message
  * bridge registers, and models the shared, mutable `ctx.ui` object that the
  * bridge patches.
  */
-function setup() {
+function setup({ enabled = true }: { enabled?: boolean } = {}) {
   const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
   const commands = new Map<string, (args: string, ctx: unknown) => unknown>();
   const notifications: string[] = [];
@@ -33,7 +33,7 @@ function setup() {
     },
   };
 
-  registerCustomUiBridge(pi as never);
+  registerCustomUiBridge(pi as never, enabled ? { enabled: true } : undefined);
   handlers.get("session_start")?.({}, ctx);
 
   const frames = (): Frame[] =>
@@ -92,6 +92,18 @@ function open(
 }
 
 describe("registerCustomUiBridge", () => {
+  it("stays a no-op while the GUI overlay is disabled", async () => {
+    expect(CUSTOM_UI_OVERLAY_ENABLED).toBe(false);
+    const { ctx, frames } = setup({ enabled: false });
+    const component = createComponent();
+
+    void open(ctx, component, { overlay: true, overlayOptions: { width: 60 } });
+    await Promise.resolve();
+
+    expect(frames()).toEqual([]);
+    expect(await ctx.ui.custom()).toBeUndefined();
+  });
+
   it("replaces the RPC stub so the component actually renders", async () => {
     const { ctx, frames } = setup();
     const component = createComponent();

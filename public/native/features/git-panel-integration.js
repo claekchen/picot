@@ -4,6 +4,7 @@
 import { createDiffTabId } from "../../file-preview-panel-diff.js";
 import { GitClient } from "../../git-client.js";
 import { GitPanel } from "../../git-panel.js";
+import { t } from "../../i18n.js";
 
 export function setupGitPanel({
   runtime,
@@ -13,12 +14,11 @@ export function setupGitPanel({
   filePreviewPanel,
   onError,
 } = {}) {
-  const filesTab = document.getElementById("file-sidebar-files-tab");
-  const gitTab = document.getElementById("file-sidebar-git-tab");
+  const closeBtn = document.getElementById("file-sidebar-close");
   const path = document.getElementById("file-sidebar-path");
   const up = document.getElementById("file-sidebar-up");
   const finder = document.getElementById("file-sidebar-finder");
-  if (!runtime || !container || !filesTab || !gitTab) return null;
+  if (!runtime || !container) return null;
 
   const client = new GitClient({
     send: (message) => {
@@ -82,22 +82,28 @@ export function setupGitPanel({
     },
   });
 
+  let currentTab = "files";
+
+  const applyChrome = () => {
+    const showGit = currentTab === "git";
+    if (closeBtn) {
+      closeBtn.dataset.i18nAriaLabel = showGit ? "git.closeChanges" : "files.close";
+      closeBtn.setAttribute("aria-label", t(closeBtn.dataset.i18nAriaLabel));
+    }
+  };
+
   const setTab = (tab) => {
-    const showGit = tab === "git";
-    filesTab.classList.toggle("active", !showGit);
-    filesTab.setAttribute("aria-selected", String(!showGit));
-    gitTab.classList.toggle("active", showGit);
-    gitTab.setAttribute("aria-selected", String(showGit));
+    currentTab = tab === "git" ? "git" : "files";
+    const showGit = currentTab === "git";
     container.classList.toggle("hidden", !showGit);
     fileList?.classList.toggle("hidden", showGit);
     path?.classList.toggle("hidden", showGit);
     up?.classList.toggle("hidden", showGit);
     finder?.classList.toggle("hidden", showGit);
+    applyChrome();
     if (showGit) panel.refresh();
   };
 
-  filesTab.addEventListener("click", () => setTab("files"));
-  gitTab.addEventListener("click", () => setTab("git"));
   setTab("files");
 
   const unsubscribe = runtime.subscribe((frame) => {
@@ -108,6 +114,9 @@ export function setupGitPanel({
     panel,
     client,
     setTab,
+    getTab() {
+      return currentTab;
+    },
     destroy() {
       unsubscribe?.();
       panel.destroy();

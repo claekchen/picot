@@ -17,6 +17,14 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 // The wire format rides `ctx.ui.notify(JSON)` and the frontend correlates by
 // panel id, mirroring the `picot-config` data plane (see
 // public/native/extensions/custom-ui-panel.js).
+//
+// The overlay is currently off: session_start panels (MCP, etc.) flash a TUI
+// dialog in the GUI because Picot has no hidden-overlay equivalent. Leave
+// `custom()` as Pi's RPC stub until that mapping is stable. Tests pass
+// `{ enabled: true }` to exercise the implementation.
+
+/** When false, `registerCustomUiBridge` is a no-op and `custom()` stays stubbed. */
+export const CUSTOM_UI_OVERLAY_ENABLED = false;
 
 const DEFAULT_WIDTH = 82;
 const MIN_WIDTH = 20;
@@ -70,7 +78,9 @@ function createOverlayHandle(close: () => void) {
   };
 }
 
-export function registerCustomUiBridge(pi: ExtensionAPI): void {
+export function registerCustomUiBridge(pi: ExtensionAPI, options?: { enabled?: boolean }): void {
+  if (!(options?.enabled ?? CUSTOM_UI_OVERLAY_ENABLED)) return;
+
   // Panels form a stack so a component that opens a nested overlay behaves the
   // way it would in the TUI: input goes to the topmost panel.
   const stack: Panel[] = [];

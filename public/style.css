@@ -47,7 +47,39 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  scrollbar-width: thin;
+}
+
+/* Chromium/WebView2 treats `scrollbar-width` as the native Win32
+   scrollbar (arrow buttons, gray thumb) and then ignores
+   ::-webkit-scrollbar. Style overlay-like bars here; hide with
+   `scrollbar-width: none` only on specific overflow-x toolbars. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: var(--radius-xs);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-bright);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-hover) transparent;
+  }
 }
 
 html,
@@ -154,30 +186,11 @@ body {
   padding: var(--space-1-5) var(--space-2);
   overflow: auto;
 }
-.file-sidebar-tabs {
-  display: flex;
-  flex: 1;
-  align-self: stretch;
-  gap: var(--space-1);
-}
-.file-sidebar-tab {
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font: inherit;
-  padding: var(--space-1) var(--space-2);
-}
-.file-sidebar-tab.active {
-  border-bottom-color: var(--accent, currentColor);
-  color: var(--text-primary);
-}
 .git-panel-toolbar {
   display: flex;
   flex: none;
-  flex-wrap: nowrap;
-  align-items: center;
+  flex-direction: row;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-2);
   margin: 0 0 var(--space-1);
@@ -188,36 +201,35 @@ body {
 }
 .git-panel-details {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 1;
 }
 .git-panel-summary,
 .git-panel-stats {
   margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .git-panel-summary {
   color: var(--text-primary);
   font-size: var(--font-size-sm);
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.35;
 }
 .git-panel-stats {
   margin-top: var(--space-0-5);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-  line-height: 1.25;
+  line-height: 1.35;
 }
-.git-panel-toolbar-actions,
+.git-panel-toolbar-actions {
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+}
 .git-group-actions {
   display: flex;
   flex: none;
   flex-wrap: nowrap;
   gap: var(--space-1);
 }
-.git-panel-refresh,
-.git-panel-commit,
 .git-group-actions button {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -231,21 +243,8 @@ body {
   padding: 0 var(--space-1-5);
   white-space: nowrap;
 }
-.git-panel-refresh:hover,
 .git-group-actions button:hover {
   background: var(--bg-glass-hover);
-}
-.git-panel-commit {
-  border-color: var(--accent);
-  background: var(--accent-subtle);
-}
-.git-panel-commit:hover:not(:disabled) {
-  background: var(--accent, #6896fa);
-  color: var(--bg-solid);
-}
-.git-panel-commit:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
 }
 .git-group + .git-group {
   border-top: 1px solid var(--border);
@@ -277,7 +276,6 @@ body {
 }
 .git-group-heading .sidebar-section-count {
   margin-left: auto;
-  color: var(--text-dim);
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
@@ -318,7 +316,6 @@ body {
 }
 .git-tree-count {
   margin-left: auto;
-  color: var(--text-dim);
   font-size: var(--font-size-sm);
 }
 .git-entry {
@@ -409,7 +406,6 @@ body {
   display: inline-block;
   width: 3.5em;
   margin-right: var(--space-2);
-  color: var(--text-dim);
   font-size: var(--font-size-sm);
   user-select: none;
   text-align: right;
@@ -663,6 +659,7 @@ body.is-resizing-side-panel {
 }
 
 .file-sidebar-header {
+  justify-content: flex-end;
   border-bottom: 0;
 }
 
@@ -678,7 +675,6 @@ body.is-resizing-side-panel {
 .file-sidebar-path {
   padding: var(--space-2) var(--space-3) var(--space-2);
   font-size: var(--font-size-sm);
-  color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -698,7 +694,7 @@ body.is-resizing-side-panel {
 }
 
 .file-list::-webkit-scrollbar-thumb {
-  background: var(--text-dim);
+  background: var(--text-secondary);
   border: 3px solid transparent;
   border-radius: var(--radius-pill);
   background-clip: padding-box;
@@ -734,7 +730,6 @@ body.is-resizing-side-panel {
   :root[data-theme] {
     --border: rgba(128, 128, 128, 0.5);
     --border-hover: rgba(128, 128, 128, 0.7);
-    --text-dim: var(--text-secondary);
   }
 }
 

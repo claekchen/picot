@@ -48,9 +48,9 @@ const notify = (payload) => ({
   message: JSON.stringify({ __picotCustomUi: payload }),
 });
 
-function setup({ onError = () => {} } = {}) {
+function setup({ onError = () => {}, enabled = true } = {}) {
   const runtime = { request: vi.fn().mockResolvedValue({}) };
-  const panel = new CustomUiPanel({ runtime, getTarget: () => target, onError });
+  const panel = new CustomUiPanel({ runtime, getTarget: () => target, onError, enabled });
   return { runtime, panel };
 }
 
@@ -76,6 +76,18 @@ describe("CustomUiPanel", () => {
     const { panel } = setup();
     expect(panel.consumeNotify({ message: "just a normal message" })).toBe(false);
     expect(panel.isOpen).toBe(false);
+  });
+
+  it("swallows custom-UI frames without opening while the overlay is disabled", () => {
+    const { panel } = setup({ enabled: false });
+    const consumed = panel.consumeNotify(
+      notify({ op: "open", id: "panel-1", width: 60, lines: ["╭── MCP ──╮"] }),
+    );
+
+    expect(consumed).toBe(true);
+    expect(panel.isOpen).toBe(false);
+    expect(document.querySelectorAll(".custom-ui-overlay")).toHaveLength(0);
+    expect(FakeTerminal.instances).toHaveLength(0);
   });
 
   it("opens an overlay sized to the component and paints its lines", () => {

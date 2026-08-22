@@ -8,8 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 function setupDom() {
   document.body.replaceChildren();
   const els = {
-    "file-sidebar-files-tab": "button",
-    "file-sidebar-git-tab": "button",
+    "file-sidebar-close": "button",
     "file-sidebar-path": "div",
     "file-sidebar-up": "button",
     "file-sidebar-finder": "button",
@@ -24,6 +23,10 @@ function setupDom() {
   return {
     container: document.getElementById("git-panel"),
     fileList: document.getElementById("file-list"),
+    closeBtn: document.getElementById("file-sidebar-close"),
+    up: document.getElementById("file-sidebar-up"),
+    finder: document.getElementById("file-sidebar-finder"),
+    path: document.getElementById("file-sidebar-path"),
   };
 }
 
@@ -62,7 +65,7 @@ describe("setupGitPanel integration", () => {
     expect(result.client.generation).toBe(0);
   });
 
-  it("sends a git status command when the Git tab is activated", async () => {
+  it("sends a git status command when the Git view is activated", async () => {
     const { setupGitPanel } = await import("./git-panel-integration.js");
     const { container, fileList } = setupDom();
     const runtime = createRuntime();
@@ -76,7 +79,7 @@ describe("setupGitPanel integration", () => {
       onError: vi.fn(),
     });
 
-    // Switching to the Git tab triggers panel.refresh() → client.command({type:"status"})
+    // Switching to the Git view triggers panel.refresh() → client.command({type:"status"})
     result.setTab("git");
 
     // Allow the microtask queue to flush (send is called synchronously inside command)
@@ -87,5 +90,34 @@ describe("setupGitPanel integration", () => {
     const statusCommand = runtime.sent.find((m) => m.type === "status");
     expect(statusCommand).toBeDefined();
     expect(statusCommand.requestId).toMatch(/^git-\d+$/);
+  });
+
+  it("hides file-browser chrome for the Git view without a Files/Git title", async () => {
+    const { setupGitPanel } = await import("./git-panel-integration.js");
+    const { container, fileList, closeBtn, up, finder, path } = setupDom();
+    const result = setupGitPanel({
+      runtime: createRuntime(),
+      getTarget: () => ({ workspaceId: "ws-1" }),
+      container,
+      fileList,
+      filePreviewPanel: { openDiff: vi.fn() },
+    });
+
+    result.setTab("git");
+    expect(result.getTab()).toBe("git");
+    expect(closeBtn.getAttribute("aria-label")).toBe("git.closeChanges");
+    expect(document.getElementById("file-sidebar-title")).toBeNull();
+    expect(container.classList.contains("hidden")).toBe(false);
+    expect(fileList.classList.contains("hidden")).toBe(true);
+    expect(path.classList.contains("hidden")).toBe(true);
+    expect(up.classList.contains("hidden")).toBe(true);
+    expect(finder.classList.contains("hidden")).toBe(true);
+
+    result.setTab("files");
+    expect(result.getTab()).toBe("files");
+    expect(closeBtn.getAttribute("aria-label")).toBe("files.close");
+    expect(container.classList.contains("hidden")).toBe(true);
+    expect(fileList.classList.contains("hidden")).toBe(false);
+    expect(up.classList.contains("hidden")).toBe(false);
   });
 });

@@ -4,7 +4,10 @@ import { initI18n, onLocaleChange, t } from "../i18n.js";
 import { reconcileSnapshotTarget } from "../session/bootstrap-target.js";
 import { SessionUiStateStore } from "../session-ui-state.js";
 import { dispatchSuperAgentTaskNative } from "../super-agent/native-dispatch.js";
-import { isSuperAgentProjectPath } from "../super-agent/session.js";
+import {
+  isSuperAgentSessionSummary,
+  resolveSuperAgentActiveSession,
+} from "../super-agent/session.js";
 import { isSuperAgentEnabled } from "../super-agent/settings.js";
 import { selectSuperAgentStartupAction } from "../super-agent/startup-flow.js";
 import { buildTaskComposerPrompt, markTaskChildSessionBound } from "../super-agent/task-state.js";
@@ -71,7 +74,7 @@ import { setupAppKeyboardShortcuts } from "./utils/keyboard-shortcuts.js";
 import { randomId } from "./utils/random-id.js";
 import { appRoutePath, parseAppRoute, replaceTemporarySessionRoute } from "./utils/router.js";
 import { findLatestAssistantUsage, setupContextUsage } from "./workspace/context-usage.js";
-import { toggleExclusiveSidePanel } from "./workspace/exclusive-side-panel.js";
+import { toggleExclusiveSideView } from "./workspace/exclusive-side-panel.js";
 import { NativeFileBrowser } from "./workspace/file-browser.js";
 import { setupHeaderOpenApp } from "./workspace/header-open-app.js";
 import { setupProjectHeader } from "./workspace/project-header.js";
@@ -356,15 +359,28 @@ const gitPanel = setupGitPanel({
 let fileBrowser = null;
 
 /**
- * Expand the file sidebar, switch to the Files tab, and (when newly opened)
- * load the workspace root. Wired to #file-sidebar-toggle and Cmd/Ctrl+B.
+ * Header Files / Git own one view each. Opening the active view closes the
+ * panel; opening the other view switches content without an in-panel tab bar.
  */
-function openFilesPanel() {
+function openWorkspacePanel(view) {
   const sidebar = document.getElementById("file-sidebar");
-  if (!sidebar) return;
-  const opened = toggleExclusiveSidePanel(sidebar, [document.getElementById("diff-sidebar")]);
-  gitPanel?.setTab("files");
+  const result = toggleExclusiveSideView(sidebar, {
+    otherPanels: [document.getElementById("diff-sidebar")],
+    currentView: gitPanel?.getTab?.() ?? "files",
+    nextView: view,
+  });
+  if (!result.open) return false;
+  gitPanel?.setTab(view);
+  return true;
+}
+
+function openFilesPanel() {
+  const opened = openWorkspacePanel("files");
   if (opened && fileBrowser?.currentPath === null) fileBrowser.load().catch(showError);
+}
+
+function openGitPanel() {
+  openWorkspacePanel("git");
 }
 
 const sessionCostEl = document.getElementById("session-cost");
@@ -760,11 +776,13 @@ document.getElementById("refresh-sessions-btn")?.addEventListener("click", (e) =
   sidebar?.load().catch(showError);
 });
 window.addEventListener("picot-super-agent-autostart-changed", (event) => {
-  if (event.detail?.enabled) ensureSuperAgentStartupSession().catch(showError);
-  else {
-    setAgentInboxNavSession(null);
-    sidebar?.render();
+  if (event.detail?.enabled) {
+    sidebar?.syncAgentInboxNav();
+    ensureSuperAgentStartupSession().catch(showError);
+    return;
   }
+  setAgentInboxNavSession(null);
+  updateSuperAgentActiveState(null);
 });
 setupFileBrowser();
 const imageAttachments = setupComposerImageAttachments({
@@ -1266,7 +1284,7 @@ function subscribeToLiveSessions(sessions) {
       adapter.subscribeTarget(liveTarget);
     }
   }
-  updateSuperAgentActiveState((sessions ?? []).find((session) => session.id === target.sessionId));
+  updateSuperAgentActiveState(resolveSuperAgentActiveSession(sessions, target.sessionId));
   handleSuperAgentStartupSessions(sessions).catch(showError);
 }
 
@@ -1313,10 +1331,6 @@ document.getElementById("sidebar-agent-inbox-btn")?.addEventListener("click", ()
 document.addEventListener("sa-open-agent-inbox", (event) => {
   openAgentInboxNav({ openRuntimePanel: event.detail?.openRuntimePanel === true });
 });
-
-function isSuperAgentSessionSummary(session) {
-  return session?.kind === "super-agent" || isSuperAgentProjectPath(session?.projectPath);
-}
 
 function insertTaskPrompt(task) {
   if (!task) return;
@@ -1630,13 +1644,7 @@ function setupFileBrowser() {
 
   const diffSidebar = document.getElementById("diff-sidebar");
   const diffToggle = document.getElementById("diff-sidebar-toggle");
-  diffToggle?.addEventListener("click", () => {
-    // Header Git button: open the File/Git sidebar and switch to the Git tab,
-    // instead of the legacy diff-sidebar panel.
-    const fileSidebarEl = document.getElementById("file-sidebar");
-    const opened = toggleExclusiveSidePanel(fileSidebarEl, [diffSidebar]);
-    if (opened) gitPanel?.setTab("git");
-  });
+  diffToggle?.addEventListener("click", openGitPanel);
   document.getElementById("diff-sidebar-close")?.addEventListener("click", () => {
     diffSidebar.classList.add("collapsed");
   });

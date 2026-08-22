@@ -16,7 +16,6 @@
 /* Welcome */
 .welcome {
   text-align: center;
-  color: var(--text-dim);
   margin-top: 120px;
   animation: fadeIn 0.5s var(--ease);
 }
@@ -34,7 +33,6 @@
 
 .welcome .hint {
   font-size: var(--font-size-md);
-  color: var(--text-dim);
   font-weight: 400;
 }
 
@@ -44,7 +42,6 @@
   justify-content: center;
   margin-top: var(--space-5);
   font-size: var(--font-size-sm);
-  color: var(--text-dim);
 }
 
 .shortcuts-hint span {
@@ -110,7 +107,6 @@
 .message-usage {
   display: inline-block;
   font-size: var(--font-size-sm);
-  color: var(--text-dim);
   opacity: 0.5;
 }
 
@@ -265,7 +261,6 @@
   cursor: pointer;
   user-select: none;
   font-size: var(--font-size-sm);
-  color: var(--text-dim);
   transition: background var(--duration) var(--ease);
 }
 
@@ -284,7 +279,6 @@
   margin-left: auto;
   padding-left: var(--space-2);
   font-size: var(--font-size-sm);
-  color: var(--text-dim);
   opacity: 0.7;
   flex-shrink: 0;
   white-space: nowrap;
@@ -312,7 +306,6 @@
   overscroll-behavior: contain;
   font-size: var(--font-size-sm);
   line-height: 1.5;
-  color: var(--text-dim);
 }
 
 .thinking-content.expanded {
@@ -342,7 +335,6 @@ body.hide-thinking .thinking-block {
   cursor: pointer;
   user-select: none;
   font-size: var(--font-size-sm);
-  color: var(--text-dim);
 }
 
 .process-details-toggle:hover {
@@ -435,7 +427,6 @@ body.hide-thinking .thinking-block {
   margin: 0;
   height: 18px;
   border: none;
-  color: var(--text-dim);
   cursor: pointer;
   padding: var(--space-0-5) var(--space-1);
   font-size: var(--font-size-sm);
@@ -473,7 +464,6 @@ body.hide-thinking .thinking-block {
   opacity: 0.45;
   background: none;
   border: none;
-  color: var(--text-dim);
   cursor: pointer;
   padding: var(--space-0-5) var(--space-1);
   font-size: var(--font-size-sm);

@@ -42,7 +42,7 @@ describe("GitPanel", () => {
     expect(panel.container.querySelector("script")).toBeNull();
   });
 
-  it("renders a compact status toolbar with primary commit and secondary refresh actions", () => {
+  it("renders a status toolbar with icon-only refresh and AI commit actions", () => {
     const command = vi.fn();
     const panel = new GitPanel({
       container: document.querySelector("#panel"),
@@ -60,9 +60,19 @@ describe("GitPanel", () => {
 
     const toolbar = panel.container.querySelector(".git-panel-toolbar");
     expect(toolbar?.querySelector(".git-panel-summary")?.textContent).toContain("feature/panel");
-    expect(toolbar?.querySelector(".git-panel-refresh")).not.toBeNull();
-    expect(panel.container.querySelector(".git-panel-commit")).not.toBeNull();
-    expect(panel.container.querySelector(".git-panel-stats")).not.toBeNull();
+    expect(toolbar?.querySelector(".git-panel-stats")?.textContent).toContain("+5");
+    const refresh = toolbar?.querySelector(".git-panel-refresh");
+    const commit = toolbar?.querySelector(".git-panel-commit");
+    expect(refresh?.classList.contains("ui-icon-button")).toBe(true);
+    expect(commit?.classList.contains("ui-icon-button")).toBe(true);
+    expect(refresh?.querySelector("svg")).not.toBeNull();
+    expect(commit?.querySelector("svg")).not.toBeNull();
+    expect(refresh?.getAttribute("aria-label")).toBe("Refresh Git status");
+    expect(commit?.getAttribute("aria-label")).toBe("Generate AI commit message");
+    expect(refresh?.title).toBe("Refresh Git status");
+    expect(commit?.title).toBe("Generate AI commit message");
+    expect(toolbar?.firstElementChild?.className).toBe("git-panel-details");
+    expect(toolbar?.lastElementChild?.className).toBe("git-panel-toolbar-actions");
   });
 
   it("renders group headers as session-list style section headers with a disclosure chevron", () => {

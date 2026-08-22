@@ -13,6 +13,7 @@ type ConfigRequest = {
 export default function picotBridge(pi: ExtensionAPI) {
   projectTrust(pi);
   registerAutomaticSessionTitle(pi);
+  // No-op while CUSTOM_UI_OVERLAY_ENABLED is false (startup TUI flash).
   registerCustomUiBridge(pi);
 
   // Configuration data plane. Invoked by the WebView via a native RPC prompt

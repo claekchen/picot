@@ -3,7 +3,7 @@
 
 import { createFileTypeIcon } from "./file-type-icons.js";
 import { t } from "./i18n.js";
-import { createIcon } from "./icons.js";
+import { createIcon, setButtonIcon } from "./icons.js";
 
 function createSectionChevron() {
   const chevron = document.createElement("span");
@@ -11,6 +11,18 @@ function createSectionChevron() {
   chevron.setAttribute("aria-hidden", "true");
   chevron.append(createIcon("chevron-right", { size: 16 }));
   return chevron;
+}
+
+function createToolbarIconButton({ className, icon, label, variant, disabled = false, onClick }) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `ui-icon-button ui-icon-button--sm ${variant} ${className}`;
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  button.disabled = disabled;
+  setButtonIcon(button, icon, { size: 14 });
+  button.addEventListener("click", onClick);
+  return button;
 }
 
 // Object-icon rendering for Git entries uses the shared Material file-type
@@ -432,20 +444,23 @@ export class GitPanel {
     toolbar.append(details);
     const actions = document.createElement("div");
     actions.className = "git-panel-toolbar-actions";
-    const refresh = document.createElement("button");
-    refresh.type = "button";
-    refresh.className = "git-panel-refresh";
-    refresh.textContent = t("git.refresh");
-    refresh.setAttribute("aria-label", t("git.refresh"));
-    refresh.addEventListener("click", () => void this.refresh());
-    actions.append(refresh);
-    const commit = document.createElement("button");
-    commit.type = "button";
-    commit.className = "git-panel-commit";
-    commit.textContent = t("git.aiCommitMessage");
-    commit.disabled = snapshot.counts?.staged === 0 || snapshot.counts?.conflicted > 0;
-    commit.addEventListener("click", () => this.requestAiCommitMessage());
-    actions.append(commit);
+    actions.append(
+      createToolbarIconButton({
+        className: "git-panel-refresh",
+        icon: "refresh-cw",
+        label: t("git.refresh"),
+        variant: "ui-icon-button--ghost",
+        onClick: () => void this.refresh(),
+      }),
+      createToolbarIconButton({
+        className: "git-panel-commit",
+        icon: "sparkles",
+        label: t("git.aiCommitMessage"),
+        variant: "ui-icon-button--primary",
+        disabled: snapshot.counts?.staged === 0 || snapshot.counts?.conflicted > 0,
+        onClick: () => this.requestAiCommitMessage(),
+      }),
+    );
     toolbar.append(actions);
     this.container.prepend(toolbar);
     this.container.scrollTop = scrollTop;

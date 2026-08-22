@@ -41,12 +41,17 @@ export class CustomUiPanel {
   #themeDisposable = null;
   #panelId = null;
   #onError;
+  #enabled;
 
-  constructor({ runtime, getTarget, container = null, onError = () => {} }) {
+  constructor({ runtime, getTarget, container = null, onError = () => {}, enabled = false }) {
     this.#runtime = runtime;
     this.#getTarget = getTarget;
     this.#container = container;
     this.#onError = onError;
+    // Off by default: `ctx.ui.custom()` overlays are unstable in the GUI
+    // (they flash on session start). Pass `{ enabled: true }` to exercise
+    // the renderer; production app.js leaves this unset.
+    this.#enabled = enabled === true;
   }
 
   get isOpen() {
@@ -68,6 +73,9 @@ export class CustomUiPanel {
     }
     const frame = payload?.__picotCustomUi;
     if (!frame || typeof frame.op !== "string") return false;
+    // Still consume the notify so JSON frames do not land in the transcript,
+    // even while the overlay itself is disabled.
+    if (!this.#enabled) return true;
 
     switch (frame.op) {
       case "open":
