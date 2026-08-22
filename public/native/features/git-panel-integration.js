@@ -6,6 +6,12 @@ import { GitClient } from "../../git-client.js";
 import { GitPanel } from "../../git-panel.js";
 import { t } from "../../i18n.js";
 
+export function isGitUnavailableError(error) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const trimmed = message.trim();
+  return trimmed === "git_not_found" || trimmed.toLowerCase() === "program not found";
+}
+
 export function setupGitPanel({
   runtime,
   getTarget,
@@ -35,7 +41,13 @@ export function setupGitPanel({
         .then((response) => {
           if (response) handleFrame({ ...response, requestId: message.requestId });
         })
-        .catch((error) => onError?.(error));
+        .catch((error) => {
+          if (isGitUnavailableError(error)) {
+            panel?.setSnapshot(null);
+            return;
+          }
+          onError?.(error);
+        });
     },
   });
 
@@ -64,7 +76,8 @@ export function setupGitPanel({
     } else if (normalized.type === "git_command_ack") panel.refresh();
     else if (normalized.type === "git_command_failed") {
       client.consumeWriteFailure(normalized);
-      panel.applyCommitFailure(normalized.error);
+      if (isGitUnavailableError(normalized.error)) panel.setSnapshot(null);
+      else panel.applyCommitFailure(normalized.error);
     }
   };
 

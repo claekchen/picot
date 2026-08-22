@@ -120,4 +120,34 @@ describe("setupGitPanel integration", () => {
     expect(fileList.classList.contains("hidden")).toBe(false);
     expect(up.classList.contains("hidden")).toBe(false);
   });
+
+  it("does not surface a missing git binary as a host error", async () => {
+    const { setupGitPanel, isGitUnavailableError } = await import("./git-panel-integration.js");
+    const { container, fileList } = setupDom();
+    const onError = vi.fn();
+    const runtime = {
+      sent: [],
+      git() {
+        return Promise.reject(new Error("program not found"));
+      },
+      subscribe() {
+        return () => {};
+      },
+    };
+
+    const result = setupGitPanel({
+      runtime,
+      getTarget: () => ({ workspaceId: "ws-1" }),
+      container,
+      fileList,
+      filePreviewPanel: { openDiff: vi.fn() },
+      onError,
+    });
+
+    result.setTab("git");
+    await vi.waitFor(() => expect(container.querySelector("p")).not.toBeNull());
+    expect(onError).not.toHaveBeenCalled();
+    expect(isGitUnavailableError(new Error("program not found"))).toBe(true);
+    expect(isGitUnavailableError(new Error("hook says no"))).toBe(false);
+  });
 });
