@@ -52,7 +52,7 @@ describe("composer slash menu", () => {
     expect(activeSlashQuery(input)).toBeNull();
   });
 
-  it("displays skill and extension commands, skills first", async () => {
+  it("displays only skill commands", async () => {
     const formSubmit = vi.fn();
     input.form?.addEventListener("submit", formSubmit);
     const controller = setupComposerSlashMenu({
@@ -74,14 +74,12 @@ describe("composer slash menu", () => {
     input.setSelectionRange(input.value.length, input.value.length);
     await controller.update();
 
-    // Ensure the menu groups both kinds (headings may be i18n‑translated).
     const options = menu.querySelectorAll(".skill-slash-option");
-    expect(options).toHaveLength(2);
+    expect(options).toHaveLength(1);
     expect(options[0].textContent).toContain("Research");
-    expect(options[1].textContent).toContain("Review");
-    expect(menu.querySelectorAll(".skill-slash-heading")).toHaveLength(2);
-    // Builtin Picot commands stay out of the slash menu.
+    expect(menu.querySelectorAll(".skill-slash-heading")).toHaveLength(1);
     expect(menu.textContent).not.toContain("Settings");
+    expect(menu.textContent).not.toContain("Review files");
 
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }));
 
@@ -90,7 +88,7 @@ describe("composer slash menu", () => {
     expect(formSubmit).not.toHaveBeenCalled();
   });
 
-  it("inserts an extension command when it is selected", async () => {
+  it("does not list extension commands in the slash menu", async () => {
     const controller = setupComposerSlashMenu({
       input,
       container: menu,
@@ -104,10 +102,8 @@ describe("composer slash menu", () => {
     input.setSelectionRange(input.value.length, input.value.length);
     await controller.update();
 
-    expect(menu.querySelectorAll(".skill-slash-option")).toHaveLength(1);
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }));
-
-    expect(input.value).toBe("/picot-help ");
+    expect(menu.querySelectorAll(".skill-slash-option")).toHaveLength(0);
+    expect(menu.textContent).not.toContain("Picot Help");
   });
 
   it("shows Personal vs Project from pi skill sourceInfo", async () => {
@@ -180,7 +176,7 @@ describe("composer slash menu", () => {
     expect(originLabel({ type: "builtin", scope: "picot" })).toBe("Picot");
   });
 
-  it("renders the providing package in the slash menu", async () => {
+  it("does not render extension package commands in the slash menu", async () => {
     const controller = setupComposerSlashMenu({
       input,
       container: menu,
@@ -202,12 +198,11 @@ describe("composer slash menu", () => {
     input.setSelectionRange(input.value.length, input.value.length);
     await controller.update();
 
-    const scope = menu.querySelector(".skill-slash-scope");
-    expect(scope.textContent).toBe("@juicesharp/rpiv-todo");
-    expect(scope.title).toContain("node_modules/@juicesharp/rpiv-todo");
+    expect(menu.querySelectorAll(".skill-slash-option")).toHaveLength(0);
+    expect(menu.textContent).not.toContain("@juicesharp/rpiv-todo");
   });
 
-  it("matches commands by the package they come from", async () => {
+  it("does not match hidden extension commands by package name", async () => {
     const controller = setupComposerSlashMenu({
       input,
       container: menu,
@@ -226,9 +221,8 @@ describe("composer slash menu", () => {
     input.setSelectionRange(input.value.length, input.value.length);
     await controller.update();
 
-    const options = menu.querySelectorAll(".skill-slash-option");
-    expect(options).toHaveLength(1);
-    expect(options[0].textContent).toContain("Websearch");
+    expect(menu.querySelectorAll(".skill-slash-option")).toHaveLength(0);
+    expect(menu.textContent).not.toContain("Websearch");
   });
 
   it("selects a slash command instead of submitting when submit handling was registered first", async () => {

@@ -46,8 +46,9 @@ export function originLabel(command) {
   return scopeLabel(command?.sourceInfo?.scope ?? command?.scope);
 }
 
-/** Command groups rendered in the menu, in display order. */
-const MENU_GROUPS = ["skill", "extension"];
+/** Command groups rendered in the menu. Extension slash commands are not
+ * ready to show yet; keep the 0.4.0 skill-only list. */
+const MENU_GROUPS = ["skill"];
 
 function commandGroup(command) {
   if (command.type === "skill" || command.source === "skill") return "skill";
