@@ -81,6 +81,24 @@ case "$ARCH" in
   *)                die "Unsupported architecture: $ARCH" ;;
 esac
 
+# ── Detect Linux package manager ──────────────────────────────────────────────
+PKG_MGR=""
+if [ "$PLATFORM" = "linux" ]; then
+  if command -v apt-get &>/dev/null; then
+    PKG_MGR="apt"
+  elif command -v dpkg &>/dev/null; then
+    PKG_MGR="dpkg"
+  elif command -v dnf &>/dev/null; then
+    PKG_MGR="dnf"
+  elif command -v yum &>/dev/null; then
+    PKG_MGR="yum"
+  elif command -v rpm &>/dev/null; then
+    PKG_MGR="rpm"
+  else
+    die "No supported package manager found (apt/dpkg/dnf/yum/rpm)."
+  fi
+fi
+
 # ── Resolve version ───────────────────────────────────────────────────────────
 header "🎯  ${APP_NAME} Installer"
 if is_snap_path "$(command -v curl)"; then
@@ -112,15 +130,22 @@ case "$PLATFORM" in
     esac
     ;;
   linux)
-    case "$ARCH_NORM" in
-      x86_64) FILENAME="${APP_NAME}_${VER}_amd64.AppImage"   ;;
-      arm64)  FILENAME="${APP_NAME}_${VER}_aarch64.AppImage" ;;
+    case "$PKG_MGR" in
+      apt|dpkg)
+        case "$ARCH_NORM" in
+          x86_64) FILENAME="${APP_NAME}_${VER}_amd64.deb"  ;;
+          arm64)  FILENAME="${APP_NAME}_${VER}_arm64.deb"  ;;
+        esac
+        ;;
+      dnf|yum|rpm)
+        case "$ARCH_NORM" in
+          x86_64) FILENAME="${APP_NAME}-${VER}-1.x86_64.rpm"  ;;
+          arm64)  FILENAME="${APP_NAME}-${VER}-1.aarch64.rpm" ;;
+        esac
+        ;;
     esac
     ;;
 esac
-
-# Where the AppImage is installed on Linux (also read by the final "Done" message).
-LINUX_INSTALL_DIR="$HOME/.local/bin"
 
 DOWNLOAD_URL="${GITHUB_DL}/${VERSION}/${FILENAME}"
 
@@ -189,31 +214,29 @@ case "$PLATFORM" in
     ;;
 
   linux)
-    BIN_DEST="${LINUX_INSTALL_DIR}/picot"
-
-    info "Installing AppImage to ${BIN_DEST}..."
-    mkdir -p "$LINUX_INSTALL_DIR"
-    install -m 755 "$DEST" "$BIN_DEST"
-
-    success "Installed ${APP_NAME}"
-
-    case ":${PATH}:" in
-      *":${LINUX_INSTALL_DIR}:"*) ;;
-      *)
-        warn "${LINUX_INSTALL_DIR} is not on your PATH. Add this to your shell profile:"
-        info "  export PATH=\"${LINUX_INSTALL_DIR}:\$PATH\""
+    case "$PKG_MGR" in
+      apt)
+        info "Installing with apt..."
+        sudo apt-get install -y "$DEST"
+        ;;
+      dpkg)
+        info "Installing with dpkg..."
+        sudo dpkg -i "$DEST"
+        ;;
+      dnf)
+        info "Installing with dnf..."
+        sudo dnf install -y "$DEST"
+        ;;
+      yum)
+        info "Installing with yum..."
+        sudo yum localinstall -y "$DEST"
+        ;;
+      rpm)
+        info "Installing with rpm..."
+        sudo rpm -U --force "$DEST"
         ;;
     esac
-
-    # AppImages need FUSE to mount themselves at launch. Distros that ship
-    # without libfuse2 (e.g. Ubuntu 22.04+, Fedora 36+) fail with "dlopen():
-    # error loading libfuse.so.2" unless it's installed or extract-and-run is
-    # forced instead.
-    if [ ! -e /dev/fuse ] && ! command -v fusermount &>/dev/null && ! command -v fusermount3 &>/dev/null; then
-      warn "FUSE was not detected. If ${APP_NAME} fails to launch, either:"
-      info "  install libfuse2 (e.g. sudo apt install libfuse2), or"
-      info "  run: APPIMAGE_EXTRACT_AND_RUN=1 picot"
-    fi
+    success "Installed ${APP_NAME}"
     ;;
 esac
 
@@ -222,7 +245,7 @@ printf "\n${GREEN}${BOLD}✓ ${APP_NAME} ${VERSION} installed successfully!${RES
 
 case "$PLATFORM" in
   macos) info "Launch it from /Applications/${APP_NAME}.app or Spotlight." ;;
-  linux) info "Launch it by running: picot  (installed to ${LINUX_INSTALL_DIR})" ;;
+  linux) info "Launch it by running: picot  (or search in your app menu)" ;;
 esac
 
 printf "\n"
