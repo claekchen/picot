@@ -29,7 +29,19 @@ Picot ships a known-good build of the `pi` runtime **inside the .app bundle**, s
 
 ## Install
 
-[Download from GitHub Releases](https://github.com/shixin-guo/picot/releases)
+macOS / Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/shixin-guo/picot/main/scripts/install.sh | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/shixin-guo/picot/main/scripts/install.ps1 | iex
+```
+
+Or [download from GitHub Releases](https://github.com/shixin-guo/picot/releases).
 
 You **do not** need to install the `pi` CLI separately — Picot bundles its own pi runtime.
 

@@ -29,7 +29,19 @@ Picot 将 `pi` 运行时**直接打包进 .app**，无需单独安装 `pi`，无
 
 ## 安装
 
-[从 GitHub Releases 下载](https://github.com/shixin-guo/picot/releases)
+macOS / Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/shixin-guo/picot/main/scripts/install.sh | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/shixin-guo/picot/main/scripts/install.ps1 | iex
+```
+
+或 [从 GitHub Releases 下载](https://github.com/shixin-guo/picot/releases)。
 
 **无需单独安装 `pi` CLI** — Picot 内置了自己的 pi 运行时。
 
