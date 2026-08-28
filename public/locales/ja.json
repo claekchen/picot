@@ -157,7 +157,8 @@
     "processStep": "{count} ステップ",
     "processSteps": "{count} ステップ",
     "processToolCall": "{count} 件のツール呼び出し",
-    "processToolCalls": "{count} 件のツール呼び出し"
+    "processToolCalls": "{count} 件のツール呼び出し",
+    "providerError": "モデルへのリクエストに失敗しました。"
   },
   "tools": {
     "copyOutput": "出力をコピー",
@@ -664,6 +665,48 @@
       "helpPost2": "を参照してください。変更はすぐに反映されます — 再起動不要。",
       "replaceConfirm": "現在の内容をOllamaの例で置き換えますか？",
       "docsOpenFailed": "ドキュメントリンクを開けませんでした"
+    },
+    "providerPicker": {
+      "builtIn": "組み込み",
+      "subscriptions": "サブスクリプション",
+      "custom": "カスタム",
+      "oauth": "OAuth",
+      "customEndpoint": "カスタムエンドポイント",
+      "modelCount": "{count}モデル"
+    },
+    "customProvider": {
+      "title": "カスタムプロバイダーを追加",
+      "subtitle": "OpenAI互換またはAnthropic中継を検出し、モデルを選んで保存します。",
+      "id": "プロバイダー ID（任意）",
+      "idPlaceholder": "空欄なら Base URL から自動生成",
+      "baseUrl": "Base URL",
+      "apiKey": "APIキー",
+      "apiKeyPlaceholder": "検出 / テスト / 保存に必要",
+      "protocol": "プロトコル",
+      "protocolAuto": "自動検出",
+      "protocolOpenAi": "OpenAI互換",
+      "protocolAnthropic": "Claude / Anthropic",
+      "models": "上流モデル",
+      "selectAll": "すべて選択",
+      "deselectAll": "すべて解除",
+      "detect": "検出",
+      "test": "接続テスト",
+      "save": "プロバイダーを保存",
+      "baseUrlRequired": "Base URL は必須です。",
+      "keyRequired": "APIキーは必須です。",
+      "detectFirst": "先にプロトコルを検出するか、手動で選択してください。",
+      "modelsRequired": "少なくとも1つのモデルを選択してください。",
+      "detecting": "プロトコルを検出しています…",
+      "testing": "接続をテストしています…",
+      "saving": "プロバイダーを保存しています…",
+      "detected": "{protocol} を検出 · {count} モデル",
+      "detectFailed": "プロトコルを検出できませんでした。",
+      "testOk": "到達可能 · {ms}ms",
+      "testFailed": "接続テストに失敗しました。",
+      "saved": "{id} を {count} モデルで保存しました",
+      "saveFailed": "プロバイダーの保存に失敗しました。",
+      "keyStored": " · APIキーを保存しました",
+      "keyNotStored": " · APIキーは保存されませんでした"
     },
     "apiKeys": {
       "noProviders": "既知のプロバイダーがありません。",

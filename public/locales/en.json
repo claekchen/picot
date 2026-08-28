@@ -157,7 +157,8 @@
     "processStep": "{count} step",
     "processSteps": "{count} steps",
     "processToolCall": "{count} tool call",
-    "processToolCalls": "{count} tool calls"
+    "processToolCalls": "{count} tool calls",
+    "providerError": "The model request failed."
   },
   "tools": {
     "copyOutput": "Copy output",
@@ -664,6 +665,48 @@
       "helpPost2": "for the full schema. Changes are picked up immediately — no restart needed.",
       "replaceConfirm": "Replace current content with the Ollama example?",
       "docsOpenFailed": "Could not open the documentation link"
+    },
+    "providerPicker": {
+      "builtIn": "Built-in",
+      "subscriptions": "Subscriptions",
+      "custom": "Custom",
+      "oauth": "OAuth",
+      "customEndpoint": "Custom endpoint format",
+      "modelCount": "{count} models"
+    },
+    "customProvider": {
+      "title": "Add custom provider",
+      "subtitle": "Detect an OpenAI-compatible or Anthropic relay, pick models, then save.",
+      "id": "Provider ID (optional)",
+      "idPlaceholder": "Leave blank to derive from the Base URL",
+      "baseUrl": "Base URL",
+      "apiKey": "API key",
+      "apiKeyPlaceholder": "Required for detect / test / save",
+      "protocol": "Protocol",
+      "protocolAuto": "Auto-detect",
+      "protocolOpenAi": "OpenAI compatible",
+      "protocolAnthropic": "Claude / Anthropic",
+      "models": "Upstream models",
+      "selectAll": "Select all",
+      "deselectAll": "Deselect all",
+      "detect": "Detect",
+      "test": "Test connectivity",
+      "save": "Save provider",
+      "baseUrlRequired": "Base URL is required.",
+      "keyRequired": "API key is required.",
+      "detectFirst": "Detect the protocol first, or choose it manually.",
+      "modelsRequired": "Select at least one model.",
+      "detecting": "Detecting protocol…",
+      "testing": "Testing connectivity…",
+      "saving": "Saving provider…",
+      "detected": "Detected {protocol} · {count} models",
+      "detectFailed": "Could not detect the protocol.",
+      "testOk": "Reachable · {ms}ms",
+      "testFailed": "Connectivity test failed.",
+      "saved": "Saved {id} with {count} models",
+      "saveFailed": "Failed to save provider.",
+      "keyStored": " · API key stored",
+      "keyNotStored": " · API key was not stored"
     },
     "apiKeys": {
       "noProviders": "No providers known.",

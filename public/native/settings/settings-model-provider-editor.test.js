@@ -251,6 +251,7 @@ describe("models provider editor", () => {
   test("add-provider dialog uses themed overlay primitives", async () => {
     const editor = setupSettingsConfig({ configGateway: { call } });
     await editor.loadInlineModelsEditor();
+    await editor.loadApiKeysPanel();
 
     document.querySelector(".models-provider-add").click();
     const dialog = document.querySelector(".provider-picker-dialog");
@@ -259,6 +260,12 @@ describe("models provider editor", () => {
     expect(dialog.closest(".ui-overlay.provider-picker-backdrop")).not.toBeNull();
     expect(dialog.querySelector(".ui-input.provider-picker-search")).not.toBeNull();
     expect(dialog.querySelector("#provider-picker-title").textContent).toBe("Add provider");
+    const sections = [...dialog.querySelectorAll(".provider-picker-section-title")].map(
+      (el) => el.dataset.section,
+    );
+    expect(sections[0]).toBe("builtIn");
+    expect(sections.at(-1)).toBe("custom");
+    expect(dialog.querySelector('[data-section="builtIn"]').textContent).not.toMatch(/API key/i);
   });
 });
 
