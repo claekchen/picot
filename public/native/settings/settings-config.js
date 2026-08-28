@@ -12,6 +12,7 @@ import {
   createLoadingPlaceholder,
 } from "../../ui/loading-placeholder.js";
 import { enhanceSelect } from "../../ui/select-menu.js";
+import { openCustomProviderEditor } from "./settings-custom-provider.js";
 import {
   clearSettingsSaveMessage,
   setSettingsSaveButtonSaving,
@@ -199,35 +200,40 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
         custom: true,
       };
       const groups = [
-        [
-          "Custom",
-          !q || "custom openai-compatible anthropic-compatible".includes(q)
-            ? [custom]
-            : matches.filter((p) => p.custom || p.provider === "custom"),
-        ],
-        [
-          "Subscriptions",
-          matches.filter(
-            (p) =>
-              !p.custom &&
-              (p.authType === "oauth" || p.source === "oauth" || p.source === "subscription"),
-          ),
-        ],
-        [
-          "API key",
-          matches.filter(
+        {
+          id: "builtIn",
+          label: t("settings.providerPicker.builtIn"),
+          items: matches.filter(
             (p) =>
               !p.custom &&
               p.authType !== "oauth" &&
               p.source !== "oauth" &&
               p.source !== "subscription",
           ),
-        ],
+        },
+        {
+          id: "subscriptions",
+          label: t("settings.providerPicker.subscriptions"),
+          items: matches.filter(
+            (p) =>
+              !p.custom &&
+              (p.authType === "oauth" || p.source === "oauth" || p.source === "subscription"),
+          ),
+        },
+        {
+          id: "custom",
+          label: t("settings.providerPicker.custom"),
+          items:
+            !q || "custom openai-compatible anthropic-compatible".includes(q)
+              ? [custom]
+              : matches.filter((p) => p.custom || p.provider === "custom"),
+        },
       ];
-      for (const [label, items] of groups) {
+      for (const { id, label, items } of groups) {
         if (!items.length) continue;
         const heading = document.createElement("div");
         heading.className = "provider-picker-section-title";
+        heading.dataset.section = id;
         heading.textContent = label;
         grid.appendChild(heading);
         for (const p of items) {
@@ -240,20 +246,32 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
           strong.textContent = p.displayName || p.provider;
           const small = document.createElement("small");
           small.textContent =
-            label === "Subscriptions"
-              ? "OAuth"
-              : label === "Custom"
-                ? "Custom endpoint format"
-                : `${Array.isArray(p.models) ? p.models.length : 0} models`;
+            id === "subscriptions"
+              ? t("settings.providerPicker.oauth")
+              : id === "custom"
+                ? t("settings.providerPicker.customEndpoint")
+                : t("settings.providerPicker.modelCount", {
+                    count: Array.isArray(p.models) ? p.models.length : 0,
+                  });
           text.append(strong, small);
           card.append(logo, text);
           card.addEventListener("click", () => {
             backdrop.remove();
             if (p.custom) {
-              openCustomProviderEditor();
+              openCustomProviderEditor({
+                call,
+                setupDialog,
+                onSaved: async (providerId) => {
+                  if (providerId) {
+                    selectedModelsConfigItem = { type: "provider", provider: providerId };
+                  }
+                  await loadInlineModelsEditor();
+                  await loadApiKeysPanel();
+                },
+              });
               return;
             }
-            if (label === "Subscriptions") {
+            if (id === "subscriptions") {
               openSubscriptionSetup(p);
               return;
             }
@@ -332,80 +350,6 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
     close.onclick = () => backdrop.remove();
     actions.appendChild(close);
     dialog.appendChild(actions);
-  }
-
-  function openCustomProviderEditor() {
-    const { backdrop, dialog } = setupDialog(
-      "Add custom provider",
-      "Connect an OpenAI-compatible or Anthropic-compatible endpoint.",
-    );
-    const form = document.createElement("div");
-    form.className = "provider-setup-form";
-    const fields = [
-      ["Provider ID", "provider", "my-provider"],
-      ["Base URL", "baseUrl", "https://api.example.com/v1"],
-      ["API key", "apiKey", "Optional"],
-      ["Model ID", "modelId", "model-name"],
-    ];
-    const inputs = {};
-    for (const [label, key, placeholder] of fields) {
-      const wrap = document.createElement("label");
-      wrap.textContent = label;
-      const input = document.createElement("input");
-      input.className = "ui-input";
-      input.placeholder = placeholder;
-      input.type = key === "apiKey" ? "password" : "text";
-      wrap.appendChild(input);
-      form.appendChild(wrap);
-      inputs[key] = input;
-    }
-    dialog.appendChild(form);
-    const error = document.createElement("div");
-    error.className = "api-key-editor-error";
-    dialog.appendChild(error);
-    const actions = document.createElement("div");
-    actions.className = "provider-setup-actions";
-    const cancel = document.createElement("button");
-    cancel.className = "ui-button ui-button--secondary";
-    cancel.textContent = "Cancel";
-    cancel.onclick = () => backdrop.remove();
-    const save = document.createElement("button");
-    save.className = "ui-button ui-button--primary";
-    save.textContent = "Save provider";
-    actions.append(cancel, save);
-    dialog.appendChild(actions);
-    save.onclick = async () => {
-      const id = inputs.provider.value.trim(),
-        baseUrl = inputs.baseUrl.value.trim(),
-        modelId = inputs.modelId.value.trim();
-      if (!id || !baseUrl || !modelId) {
-        error.textContent = "Provider ID, Base URL and Model ID are required.";
-        return;
-      }
-      save.disabled = true;
-      try {
-        const current = await call("read_models_config");
-        const json = JSON.parse(current.data.content || "{}");
-        json.providers ||= {};
-        json.providers[id] = {
-          baseUrl,
-          api: "openai-completions",
-          ...(inputs.apiKey.value.trim() ? { apiKey: inputs.apiKey.value.trim() } : {}),
-          models: [{ id: modelId }],
-        };
-        const result = await call("write_models_config", {
-          content: JSON.stringify(json, null, 2),
-        });
-        if (!result?.ok) throw new Error(result.error || "Failed to save provider");
-        backdrop.remove();
-        selectedModelsConfigItem = { type: "provider", provider: id };
-        await loadInlineModelsEditor();
-        await loadApiKeysPanel();
-      } catch (e) {
-        error.textContent = e.message;
-        save.disabled = false;
-      }
-    };
   }
 
   function escapeSelectorValue(value) {
@@ -957,7 +901,9 @@ export function setupSettingsConfig({ configGateway, onModelConfigurationChanged
       "apiKey": "ollama",
       "compat": {
         "supportsDeveloperRole": false,
-        "supportsReasoningEffort": false
+        "supportsReasoningEffort": false,
+        "supportsStore": false,
+        "supportsStrictMode": false
       },
       "models": [
         { "id": "llama3.1:8b" },

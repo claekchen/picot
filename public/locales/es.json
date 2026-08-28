@@ -157,7 +157,8 @@
     "processStep": "{count} paso",
     "processSteps": "{count} pasos",
     "processToolCall": "{count} llamada a herramienta",
-    "processToolCalls": "{count} llamadas a herramientas"
+    "processToolCalls": "{count} llamadas a herramientas",
+    "providerError": "La solicitud al modelo falló."
   },
   "tools": {
     "copyOutput": "Copiar salida",
@@ -664,6 +665,48 @@
       "helpPost2": "para el esquema completo. Los cambios se aplican inmediatamente — no se requiere reinicio.",
       "replaceConfirm": "¿Reemplazar el contenido actual con el ejemplo de Ollama?",
       "docsOpenFailed": "No se pudo abrir el enlace de documentación"
+    },
+    "providerPicker": {
+      "builtIn": "Integrados",
+      "subscriptions": "Suscripciones",
+      "custom": "Personalizado",
+      "oauth": "OAuth",
+      "customEndpoint": "Formato de endpoint personalizado",
+      "modelCount": "{count} modelos"
+    },
+    "customProvider": {
+      "title": "Añadir proveedor personalizado",
+      "subtitle": "Detecta un relay compatible con OpenAI o Anthropic, elige modelos y guarda.",
+      "id": "ID del proveedor (opcional)",
+      "idPlaceholder": "Déjalo vacío para derivarlo de la Base URL",
+      "baseUrl": "Base URL",
+      "apiKey": "Clave API",
+      "apiKeyPlaceholder": "Obligatoria para detectar / probar / guardar",
+      "protocol": "Protocolo",
+      "protocolAuto": "Detección automática",
+      "protocolOpenAi": "Compatible con OpenAI",
+      "protocolAnthropic": "Claude / Anthropic",
+      "models": "Modelos upstream",
+      "selectAll": "Seleccionar todos",
+      "deselectAll": "Deseleccionar todos",
+      "detect": "Detectar",
+      "test": "Probar conectividad",
+      "save": "Guardar proveedor",
+      "baseUrlRequired": "La Base URL es obligatoria.",
+      "keyRequired": "La clave API es obligatoria.",
+      "detectFirst": "Detecta el protocolo primero, o elígelo manualmente.",
+      "modelsRequired": "Selecciona al menos un modelo.",
+      "detecting": "Detectando protocolo…",
+      "testing": "Probando conectividad…",
+      "saving": "Guardando proveedor…",
+      "detected": "Detectado {protocol} · {count} modelos",
+      "detectFailed": "No se pudo detectar el protocolo.",
+      "testOk": "Alcanzable · {ms}ms",
+      "testFailed": "Falló la prueba de conectividad.",
+      "saved": "Guardado {id} con {count} modelos",
+      "saveFailed": "No se pudo guardar el proveedor.",
+      "keyStored": " · clave API almacenada",
+      "keyNotStored": " · la clave API no se almacenó"
     },
     "apiKeys": {
       "noProviders": "No hay proveedores conocidos.",

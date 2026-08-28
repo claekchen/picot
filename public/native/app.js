@@ -53,6 +53,7 @@ import {
   createNativeTaskNotificationSender,
   createTaskCompletionNotifications,
 } from "./notifications/task-completion-notifications.js";
+import { extractAssistantError, extractRuntimeEventError } from "./session/assistant-error.js";
 import { setupSessionInfo } from "./session/session-info.js";
 import { createSessionSelectionHandler } from "./session/session-navigation.js";
 import { setupSessionSearchDialog } from "./session/session-search-dialog.js";
@@ -247,6 +248,7 @@ let navigationGeneration = 0;
 let commandCatalog = buildCommandCatalog({});
 let streamingElement = null;
 let liveProcessGroup = null;
+let lastShownProviderError = null;
 let sidebar = null;
 let agentInboxNavSelectSession = null;
 // Sidebar loading starts before bootstrap/runtime awaits complete. Keep every
@@ -1679,16 +1681,14 @@ function runBuiltin(action) {
 async function handleRuntimeEvent(event) {
   switch (event.type) {
     case "agent_start":
+      lastShownProviderError = null;
       setStatus("working");
       contextUsage.setWorking(true);
       sidebar?.setStreaming(target.sessionId, true);
       break;
     case "agent_settled":
-      setStatus("connected");
-      contextUsage.setWorking(false);
-      sidebar?.setStreaming(target.sessionId, false);
-      hideLiveProcessIndicator();
-      collapseCompletedTurn({ markDone: true });
+    case "agent_end":
+      settleForegroundAgent(event);
       break;
     case "session_info_changed":
       sidebar?.setSessionName(target.sessionId, event.name);
@@ -1732,14 +1732,17 @@ async function handleRuntimeEvent(event) {
       }
       break;
     case "message_end":
-      if (event.message?.role === "assistant" && streamingElement) {
-        messageRenderer.updateStreamingMessage(streamingElement, event.message.content ?? []);
-        messageRenderer.finalizeStreamingMessage(streamingElement, event.message.usage ?? null);
-        contextUsage.setUsage(event.message.usage ?? null, currentModelContextWindow);
-        setSessionCost(sessionTotalCost + (event.message.usage?.cost?.total ?? 0));
-        headerStatusBar?.applyLiveUsage?.(event.message.usage ?? null);
-        streamingElement = null;
-        convNav.notifyNewMessage();
+      if (event.message?.role === "assistant") {
+        if (streamingElement) {
+          messageRenderer.updateStreamingMessage(streamingElement, event.message.content ?? []);
+          messageRenderer.finalizeStreamingMessage(streamingElement, event.message.usage ?? null);
+          contextUsage.setUsage(event.message.usage ?? null, currentModelContextWindow);
+          setSessionCost(sessionTotalCost + (event.message.usage?.cost?.total ?? 0));
+          headerStatusBar?.applyLiveUsage?.(event.message.usage ?? null);
+          streamingElement = null;
+          convNav.notifyNewMessage();
+        }
+        showProviderErrorIfNeeded(event);
       }
       break;
     case "tool_execution_start":
@@ -1854,6 +1857,15 @@ async function adoptTarget(nextTarget, { updateRoute = true } = {}) {
   input.value = draft || "";
   composerAutoResize.sync();
   await extensionUi.setForegroundSession(target.sessionId, { flush: false });
+}
+
+function lastAssistantErrorInRange(messages, start, end) {
+  for (let i = end - 1; i >= start; i -= 1) {
+    if (messages[i]?.role === "assistant") {
+      return extractAssistantError(messages[i], { fallback: t("messages.providerError") });
+    }
+  }
+  return null;
 }
 
 /** Non-empty rendered text for an assistant message's `text` blocks. */
@@ -2042,6 +2054,9 @@ function renderHistory(messages) {
       }
     }
 
+    const turnError = lastAssistantErrorInRange(messages, bodyStart, end);
+    if (turnError) messageRenderer.renderError(turnError);
+
     if (group) {
       if (group.body.children.length > 0) {
         group.setLabel(summarizeProcessGroup(stepCount, toolCallCount));
@@ -2176,6 +2191,22 @@ function abortCurrentRun() {
   // that only the UI can send. Without this, an unanswered/cancelled prompt
   // leaves the run wedged forever with Stop appearing to do nothing.
   extensionUi.cancelForeground();
+}
+
+function settleForegroundAgent(event) {
+  setStatus("connected");
+  contextUsage.setWorking(false);
+  sidebar?.setStreaming(target.sessionId, false);
+  hideLiveProcessIndicator();
+  collapseCompletedTurn({ markDone: true });
+  showProviderErrorIfNeeded(event);
+}
+
+function showProviderErrorIfNeeded(event) {
+  const error = extractRuntimeEventError(event, { fallback: t("messages.providerError") });
+  if (!error || error === lastShownProviderError) return;
+  lastShownProviderError = error;
+  messageRenderer.renderError(error);
 }
 
 function showError(error) {

@@ -274,3 +274,126 @@ describe("picot config auth operations", () => {
     expect(registry.refresh).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("picot config custom provider operations", () => {
+  it("saves a relay provider into models.json and stores the API key", async () => {
+    const { home, handlePicotConfig } = await loadConfigWithTempHome();
+    const credentials = {
+      modify: vi.fn(async () => undefined),
+      delete: vi.fn(async () => undefined),
+    };
+    const registry = {
+      runtime: { credentials },
+      refresh: vi.fn(async () => undefined),
+    };
+
+    const result = await handlePicotConfig(
+      "save_custom_provider",
+      {
+        providerId: "My Relay",
+        baseUrl: "https://relay.example.com/v1",
+        apiKey: "sk-test",
+        protocol: "openai-completions",
+        models: [{ id: "gpt-4o-mini", contextWindow: 32768, maxTokens: 4096 }],
+      },
+      { modelRegistry: registry },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        providerId: "my-relay",
+        protocol: "openai-completions",
+        modelCount: 1,
+        keyStored: true,
+      },
+    });
+    const saved = JSON.parse(readFileSync(join(home, ".pi", "agent", "models.json"), "utf8"));
+    expect(saved.providers["my-relay"]).toMatchObject({
+      baseUrl: "https://relay.example.com/v1",
+      api: "openai-completions",
+      models: [
+        expect.objectContaining({ id: "gpt-4o-mini", contextWindow: 32768, maxTokens: 4096 }),
+      ],
+    });
+    expect(saved.providers["my-relay"].apiKey).toBeUndefined();
+    expect(credentials.modify).toHaveBeenCalledWith("my-relay", expect.any(Function));
+  });
+
+  it("detects an OpenAI-compatible relay", async () => {
+    const { handlePicotConfig } = await loadConfigWithTempHome();
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (String(url).includes("/v1/models")) {
+        return new Response(
+          JSON.stringify({
+            object: "list",
+            data: [{ id: "gpt-4o-mini", context_window: 32768 }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("{}", { status: 404 });
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+    try {
+      const result = await handlePicotConfig(
+        "detect_custom_provider",
+        { baseUrl: "https://relay.example.com/v1", apiKey: "sk-test" },
+        {},
+      );
+      expect(result.ok).toBe(true);
+      expect(result).toMatchObject({
+        data: {
+          protocol: "openai-completions",
+          models: [expect.objectContaining({ id: "gpt-4o-mini" })],
+        },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("health-checks custom providers over HTTP instead of creating an agent session", async () => {
+    const { handlePicotConfig } = await loadConfigWithTempHome();
+    const { createAgentSession } = await import("@earendil-works/pi-coding-agent");
+    const fetchImpl = vi.fn(async () => {
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+    const registry = {
+      getAll: () => [
+        {
+          provider: "my-relay",
+          id: "gpt-4o-mini",
+          api: "openai-completions",
+          baseUrl: "https://relay.example.com/v1",
+        },
+      ],
+      getAvailable: async () => [{ provider: "my-relay", id: "gpt-4o-mini" }],
+      getProviderAuthStatus: () => ({ configured: true }),
+      getProviderDisplayName: () => "my-relay",
+      refresh: vi.fn(),
+      getApiKeyForProvider: async () => "sk-test",
+    };
+    try {
+      const result = await handlePicotConfig(
+        "check_model_health",
+        { provider: "my-relay", modelId: "gpt-4o-mini" },
+        { modelRegistry: registry },
+      );
+      expect(result.ok).toBe(true);
+      expect(result).toMatchObject({
+        data: { results: [expect.objectContaining({ provider: "my-relay", status: "healthy" })] },
+      });
+      expect(createAgentSession).not.toHaveBeenCalled();
+      expect(fetchImpl).toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
