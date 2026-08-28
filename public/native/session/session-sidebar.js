@@ -221,6 +221,8 @@ export class SessionSidebar {
       onCreateSession,
       onSessionsLoaded,
       onAgentInboxSessionChange,
+      loadSessions,
+      cacheScope,
     },
   ) {
     this.container = container;
@@ -233,6 +235,8 @@ export class SessionSidebar {
     this.onCreateSession = onCreateSession;
     this.onSessionsLoaded = onSessionsLoaded;
     this.onAgentInboxSessionChange = onAgentInboxSessionChange;
+    this.loadSessions = loadSessions;
+    this.cacheScope = cacheScope;
 
     this.sessions = [];
     this.activeSessionId = getTarget()?.sessionId ?? null;
@@ -473,7 +477,7 @@ export class SessionSidebar {
   // ── loading ─────────────────────────────────────────────────────
   async load({ quiet = false, retryAttempt = 0 } = {}) {
     const seq = ++this._loadSeq;
-    const workspaceId = this.getTarget()?.workspaceId;
+    const workspaceId = this.getTarget()?.workspaceId ?? this.cacheScope;
     if (!workspaceId) return;
     let renderedFromCache = false;
     if (!quiet && this.sessions.length === 0) {
@@ -500,7 +504,9 @@ export class SessionSidebar {
     }
     const previousSignature = sessionListSignature(this.sessions);
     try {
-      const response = await this.data.listAllSessions(workspaceId);
+      const response = this.loadSessions
+        ? await this.loadSessions()
+        : await this.data.listAllSessions(workspaceId);
       if (seq < this._loadCommitted) return;
       this._loadCommitted = seq;
       const receivedSessions = response.sessions ?? [];

@@ -3231,7 +3231,6 @@ dependencies = [
  "libc",
  "log",
  "notify-rust",
- "percent-encoding",
  "portable-pty",
  "qrcode",
  "rand 0.8.6",

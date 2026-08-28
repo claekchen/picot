@@ -4,6 +4,20 @@
     "welcomeHint": "Escribe un mensaje abajo para comenzar a chatear con Pi, o selecciona una sesión en la barra lateral.",
     "currentWorkspace": "Espacio de trabajo actual:"
   },
+  "launcher": {
+    "title": "Proyectos",
+    "hint": "Elige un proyecto o una sesión guardada en la barra lateral.",
+    "invalidSession": "No se puede abrir esta sesión guardada.",
+    "accessHint": "Solicita acceso desde la aplicación Picot de escritorio para cargar proyectos y sesiones.",
+    "requestAccess": "Solicitar acceso",
+    "requestingAccess": "Solicitando acceso…",
+    "waitingApproval": "Esperando la aprobación en Picot de escritorio…",
+    "accessApproved": "Acceso aprobado. Abriendo Picot…",
+    "accessDenied": "Acceso denegado. Solicítalo de nuevo para reintentar.",
+    "accessExpired": "La solicitud de acceso caducó. Solicítalo de nuevo.",
+    "accessNetworkError": "No se pudo conectar con la solicitud de acceso. Seguiremos reintentando.",
+    "composerHint": "Selecciona una sesión guardada para comenzar a chatear"
+  },
   "shortcuts": {
     "focusInput": "Enfocar entrada",
     "abort": "Cancelar"
@@ -11,7 +25,6 @@
   "nav": {
     "chat": "Chat",
     "toggleSidebar": "Alternar barra lateral",
-    "showMobileQR": "Mostrar código QR móvil",
     "openWorkspace": "Abrir espacio de trabajo",
     "openWorkspaceInApp": "Abrir espacio de trabajo en la app",
     "chooseApp": "Elegir app para abrir el espacio de trabajo",
@@ -378,7 +391,6 @@
     "modelRequestFailed": "La solicitud al modelo falló",
     "modelRequestFailedDetail": "[{provider}/{model}] {message}",
     "newSessionCancelled": "La nueva sesión fue cancelada",
-    "mobileBrokerRequired": "Iniciar un nuevo chat en otro proyecto requiere el broker de escritorio. Vuelve a abrir el código QR móvil.",
     "abortedByUser": "Cancelado por el usuario",
     "invalidJson": "JSON inválido: {detail}",
     "modelsMustBeObject": "models.json debe ser un objeto JSON.",
@@ -574,6 +586,17 @@
     "extensions": "Extensiones",
     "usage": "Uso",
     "configuration": "Proveedores",
+    "remoteAccess": "Acceso remoto",
+    "remoteAccessHelp": "Abre o escanea esta URL en un dispositivo de la misma red. Pulsa Solicitar acceso y apruébalo en Picot de escritorio.",
+    "remoteAccessUrl": "URL del lanzador LAN",
+    "remoteAccessCopy": "Copiar URL",
+    "remoteAccessRefreshQr": "Actualizar QR",
+    "remoteAccessQrRefreshed": "Código QR actualizado.",
+    "remoteAccessCopied": "URL copiada",
+    "remoteAccessCopyFailed": "No se pudo copiar",
+    "remoteAccessQrAlt": "Código QR del lanzador de Picot",
+    "remoteAccessNote": "Este QR solo abre la URL /app. No autoriza dispositivos. El acceso local usa http://<LAN-IP>:57620/app; el tráfico no está cifrado, por lo que los prompts y el código fuente podrían ser observables en la red.",
+    "remoteAccessUnavailable": "La URL del lanzador de red local no está disponible.",
     "agentInbox": "Bandeja del agente",
     "backToChat": "Volver al chat",
     "appearance": "Apariencia",
@@ -742,15 +765,6 @@
     "copyConfigPath": "Copiar ruta",
     "configPathCopied": "Copiado",
     "configPathCopyFailed": "Error al copiar"
-  },
-  "lanQr": {
-    "modalAriaLabel": "Código QR móvil",
-    "title": "Abrir en móvil",
-    "closeAriaLabel": "Cerrar",
-    "generating": "Generando código QR…",
-    "qrAlt": "Código QR para acceso móvil",
-    "hint": "Escanea con tu teléfono para abrir Picot en la misma red",
-    "openLink": "Abrir enlace"
   },
   "cost": {
     "documentTitle": "Picot - Uso",
@@ -1081,5 +1095,13 @@
     "chooseProjectBeforeApproval": "Elige un proyecto antes de aprobar.",
     "loadingProjects": "Cargando proyectos…",
     "projectRunning": "{name} · en ejecución"
+  },
+  "remoteApproval": {
+    "title": "Solicitud de acceso remoto",
+    "unknownDevice": "Navegador desconocido",
+    "warning": "Al aprobar, este dispositivo tendrá acceso a los proyectos, indicaciones, herramientas y archivos disponibles en Picot.",
+    "deny": "Denegar",
+    "approve": "Aprobar",
+    "error": "No se pudo gestionar la solicitud. Es posible que ya se haya decidido."
   }
 }

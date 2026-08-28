@@ -4,6 +4,20 @@
     "welcomeHint": "Type a message below to start chatting with Pi, or select a session from the sidebar.",
     "currentWorkspace": "Current workspace:"
   },
+  "launcher": {
+    "title": "Projects",
+    "hint": "Choose a project or saved session from the sidebar.",
+    "invalidSession": "This saved session cannot be opened.",
+    "accessHint": "Request access from your desktop Picot app to load projects and sessions.",
+    "requestAccess": "Request access",
+    "requestingAccess": "Requesting access…",
+    "waitingApproval": "Waiting for approval in desktop Picot…",
+    "accessApproved": "Access approved. Opening Picot…",
+    "accessDenied": "Access was denied. Request again to retry.",
+    "accessExpired": "This access request expired. Request again.",
+    "accessNetworkError": "The access request could not be reached. We’ll keep retrying.",
+    "composerHint": "Select a saved session to start chatting"
+  },
   "shortcuts": {
     "focusInput": "Focus input",
     "abort": "Abort"
@@ -11,7 +25,6 @@
   "nav": {
     "chat": "Chat",
     "toggleSidebar": "Toggle sidebar",
-    "showMobileQR": "Show mobile QR code",
     "openWorkspace": "Open workspace",
     "openWorkspaceInApp": "Open workspace in app",
     "chooseApp": "Choose app to open workspace",
@@ -378,7 +391,6 @@
     "modelRequestFailed": "Model request failed",
     "modelRequestFailedDetail": "[{provider}/{model}] {message}",
     "newSessionCancelled": "New session was cancelled",
-    "mobileBrokerRequired": "Starting a new chat in another project requires the desktop broker. Reopen the mobile QR code.",
     "abortedByUser": "Aborted by user",
     "invalidJson": "Invalid JSON: {detail}",
     "modelsMustBeObject": "models.json must be a JSON object.",
@@ -574,6 +586,17 @@
     "extensions": "Extensions",
     "usage": "Usage",
     "configuration": "Providers",
+    "remoteAccess": "Remote Access",
+    "remoteAccessHelp": "Open or scan this launcher URL on a device on the same network. Tap Request access, then approve it in desktop Picot.",
+    "remoteAccessUrl": "LAN launcher URL",
+    "remoteAccessCopy": "Copy URL",
+    "remoteAccessRefreshQr": "Refresh QR",
+    "remoteAccessQrRefreshed": "QR code refreshed.",
+    "remoteAccessCopied": "URL copied",
+    "remoteAccessCopyFailed": "Copy failed",
+    "remoteAccessQrAlt": "QR code for the Picot launcher",
+    "remoteAccessNote": "This QR only opens the plain /app launcher URL. It does not authorize a device. Local-network access uses http://<LAN-IP>:57620/app; traffic is unencrypted, so prompts and source may be observable on the network. Installed-PWA HTTPS requirements are not changed here.",
+    "remoteAccessUnavailable": "The local-network launcher URL is unavailable.",
     "agentInbox": "Agent Inbox",
     "backToChat": "Back to chat",
     "appearance": "Appearance",
@@ -742,15 +765,6 @@
     "copyConfigPath": "Copy path",
     "configPathCopied": "Copied",
     "configPathCopyFailed": "Copy failed"
-  },
-  "lanQr": {
-    "modalAriaLabel": "Mobile QR code",
-    "title": "Open on Mobile",
-    "closeAriaLabel": "Close",
-    "generating": "Generating QR code…",
-    "qrAlt": "QR code for mobile access",
-    "hint": "Scan with your phone to open Picot on the same network",
-    "openLink": "Open Link"
   },
   "cost": {
     "documentTitle": "Picot - Usage",
@@ -1081,5 +1095,13 @@
     "chooseProjectBeforeApproval": "Choose a project before approval.",
     "loadingProjects": "Loading projects…",
     "projectRunning": "{name} · running"
+  },
+  "remoteApproval": {
+    "title": "Remote access request",
+    "unknownDevice": "Unknown browser",
+    "warning": "Approving grants this device access to projects, prompts, tools, and files available through Picot.",
+    "deny": "Deny",
+    "approve": "Approve",
+    "error": "That request could not be handled. It may already have been decided."
   }
 }

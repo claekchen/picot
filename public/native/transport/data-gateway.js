@@ -2,6 +2,7 @@ const READ_OPERATIONS = new Set([
   "list_files",
   "list_sessions",
   "list_all_sessions",
+  "list_launcher_sessions",
   "search_sessions",
   "cost_dashboard",
   "workspace_info",
@@ -22,6 +23,7 @@ export class HostDataGateway {
   #nextRequestId = 1;
   #pending = new Map();
   #sessionListHttpTimeoutMs;
+  #deviceToken;
 
   constructor(
     adapter,
@@ -31,6 +33,7 @@ export class HostDataGateway {
       sessionListHttpTimeoutMs = DEFAULT_SESSION_LIST_HTTP_TIMEOUT_MS,
       hostReadyTimeoutMs = DEFAULT_HOST_READY_TIMEOUT_MS,
       dataRequestTimeoutMs = DEFAULT_DATA_REQUEST_TIMEOUT_MS,
+      deviceToken = "",
     } = {},
   ) {
     this.#adapter = adapter;
@@ -39,6 +42,7 @@ export class HostDataGateway {
     this.#location = location;
     this.#dataRequestTimeoutMs = dataRequestTimeoutMs;
     this.#sessionListHttpTimeoutMs = sessionListHttpTimeoutMs;
+    this.#deviceToken = deviceToken;
     adapter.setReceiver((frame) => this.#receive(frame));
     adapter.setConnectionListener?.((connected) => {
       if (!connected) this.#disconnect();
@@ -122,6 +126,10 @@ export class HostDataGateway {
     return this.request("list_all_sessions", { workspaceId });
   }
 
+  listLauncherSessions() {
+    return this.request("list_launcher_sessions");
+  }
+
   searchSessions(workspaceId, query) {
     return this.request("search_sessions", { workspaceId, query });
   }
@@ -162,9 +170,11 @@ export class HostDataGateway {
         reject(new Error("Session list HTTP request timed out"));
       }, timeoutMs);
     });
-    const fetchPromise = controller
-      ? this.#fetch(url, { signal: controller.signal })
-      : this.#fetch(url);
+    const init = {
+      ...(controller ? { signal: controller.signal } : {}),
+      ...(this.#deviceToken ? { headers: { authorization: `Bearer ${this.#deviceToken}` } } : {}),
+    };
+    const fetchPromise = this.#fetch(url, init);
     return Promise.race([fetchPromise, timeoutPromise]).finally(() => {
       if (timeout) clearTimeout(timeout);
     });

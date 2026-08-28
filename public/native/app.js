@@ -40,8 +40,8 @@ import { showInlineExtensionPrompt } from "./extensions/inline-extension-prompt.
 import { setupAppUpdater } from "./features/app-updater.js";
 import { createFilePreviewFollow } from "./features/file-preview-follow.js";
 import { setupGitPanel } from "./features/git-panel-integration.js";
-import { refreshLanQrButton, setupLanQr } from "./features/lan-qr.js";
-import { resolveRemoteAuth } from "./features/remote-auth.js";
+import { setupRemoteAccessApproval } from "./features/remote-access-approval.js";
+import { installRemoteAuthFetch, resolveRemoteAuth } from "./features/remote-auth.js";
 import {
   isRpivTodoCommandNotify,
   isRpivTodoWidgetRequest,
@@ -71,7 +71,7 @@ import { HostRuntimeAdapter, resolveHostWebSocketUrl } from "./transport/runtime
 import { routeRuntimeFrame } from "./transport/runtime-frame-routing.js";
 import { RuntimeGateway } from "./transport/runtime-gateway.js";
 import { setupAppKeyboardShortcuts } from "./utils/keyboard-shortcuts.js";
-import { randomId } from "./utils/random-id.js";
+import { randomId, sessionScopedClientId } from "./utils/random-id.js";
 import { appRoutePath, parseAppRoute, replaceTemporarySessionRoute } from "./utils/router.js";
 import { findLatestAssistantUsage, setupContextUsage } from "./workspace/context-usage.js";
 import { toggleExclusiveSideView } from "./workspace/exclusive-side-panel.js";
@@ -301,6 +301,8 @@ let diskHistoryFallback = null;
 const dispatchedInstances = new Map();
 
 const remoteAuth = await resolveRemoteAuth();
+installRemoteAuthFetch(remoteAuth.deviceToken);
+if (remoteAuth.clientType === "desktop") setupRemoteAccessApproval();
 
 const adapter = new HostRuntimeAdapter({
   url: resolveHostWebSocketUrl(window),
@@ -313,7 +315,10 @@ setupTerminalPanel({
   getWorkspaceId: () => target.workspaceId,
 });
 const runtime = new RuntimeGateway(adapter);
-const data = new HostDataGateway(adapter, { fetchImpl: window.fetch.bind(window) });
+const data = new HostDataGateway(adapter, {
+  fetchImpl: window.fetch.bind(window),
+  deviceToken: remoteAuth.deviceToken,
+});
 const control = new HostControlGateway(adapter);
 const config = new ConfigGateway({
   runtime,
@@ -894,7 +899,6 @@ window.addEventListener("picot:session-created", (event) => {
 });
 
 setupOpenFolderButton({ onError: showError });
-setupLanQr({ control });
 setupAppKeyboardShortcuts({
   input,
   abort: abortCurrentRun,
@@ -992,9 +996,6 @@ try {
     ).catch((error) => {
       console.warn("[Native] Failed to set up app launcher:", error);
     }),
-    refreshLanQrButton().catch((error) => {
-      console.warn("[Native] Failed to refresh LAN QR button:", error);
-    }),
     loadAvailableModels().catch((error) => {
       console.warn("[Native] Failed to load available models:", error);
     }),
@@ -1009,19 +1010,6 @@ function provisionalTargetFromRoute(currentRoute) {
     sessionId: currentRoute.sessionId,
     instanceId: "pending-bootstrap",
   };
-}
-
-function sessionScopedClientId(clientType) {
-  const key = "picot:host-client-id";
-  try {
-    const existing = sessionStorage.getItem(key);
-    if (existing) return existing;
-    const created = `${clientType}-${randomId()}`;
-    sessionStorage.setItem(key, created);
-    return created;
-  } catch {
-    return `${clientType}-${randomId()}`;
-  }
 }
 
 async function loadBootstrapTarget(currentRoute) {
