@@ -878,6 +878,7 @@
         "thinkOff": "Razonamiento apagado",
         "extensions": "Extensiones",
         "skills": "Habilidades",
+        "prompts": "Indicaciones",
         "faster": "Más rápido",
         "smarter": "Más inteligente",
         "betaUpdates": "Actualizaciones beta",
@@ -914,7 +915,8 @@
       "composer": {
         "composerSlashMenu": {
           "textcontent": {
-            "noMatchingCommands": "No hay comandos coincidentes"
+            "noMatchingCommands": "No hay comandos coincidentes",
+            "terminalOnly": "Solo terminal"
           },
           "ariaLabel": {
             "slashCommands": "Comandos slash"

@@ -878,6 +878,7 @@
         "thinkOff": "思考 关闭",
         "extensions": "扩展",
         "skills": "技能",
+        "prompts": "提示词",
         "faster": "更快",
         "smarter": "更智能",
         "betaUpdates": "Beta updates",
@@ -914,7 +915,8 @@
       "composer": {
         "composerSlashMenu": {
           "textcontent": {
-            "noMatchingCommands": "没有匹配的命令"
+            "noMatchingCommands": "没有匹配的命令",
+            "terminalOnly": "仅终端"
           },
           "ariaLabel": {
             "slashCommands": "斜杠命令"

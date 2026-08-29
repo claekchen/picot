@@ -29,7 +29,7 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::Router;
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -999,9 +999,28 @@ async fn handle_websocket(mut socket: WebSocket, state: Arc<HostState>) {
     let mut terminal_events = state.terminal_events.subscribe();
     let mut git_events = state.git_events.subscribe();
     let mut subscriptions = HashSet::new();
-    loop {
+
+    // Writing goes through a channel so this loop never blocks on the socket,
+    // and — more importantly — so request dispatch can move off this task. A
+    // runtime request stays pending for as long as the Pi command it triggers
+    // runs, and a command that opens an extension dialog only finishes once
+    // the user answers it. Answering needs the `extension_ui_request` event
+    // that this very loop delivers, so awaiting dispatch inline deadlocked the
+    // dialog until the 30s RPC timeout fired.
+    let (mut socket_sink, mut socket_stream) = socket.split();
+    let (outgoing_tx, mut outgoing_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+    let writer = tokio::spawn(async move {
+        while let Some(message) = outgoing_rx.recv().await {
+            if socket_sink.send(message).await.is_err() {
+                break;
+            }
+        }
+    });
+    let send_frame = |value: Value| outgoing_tx.send(Message::Text(value.to_string().into()));
+
+    'connection: loop {
         tokio::select! {
-            incoming = socket.next() => {
+            incoming = socket_stream.next() => {
                 let Some(Ok(message)) = incoming else { break };
                 let Message::Text(text) = message else {
                     if matches!(message, Message::Close(_)) { break; }
@@ -1010,7 +1029,7 @@ async fn handle_websocket(mut socket: WebSocket, state: Arc<HostState>) {
                 let frame = match serde_json::from_str::<Value>(&text) {
                     Ok(frame) => frame,
                     Err(_) => {
-                        let _ = send_error(&mut socket, None, "invalid_json", "Invalid JSON frame").await;
+                        let _ = send_frame(structured_error(None, "invalid_json", "Invalid JSON frame"));
                         continue;
                     }
                 };
@@ -1027,6 +1046,10 @@ async fn handle_websocket(mut socket: WebSocket, state: Arc<HostState>) {
                             .route(&client_id, &frame)
                             .map_err(|error| (error.code, error.message))
                     });
+                // Subscribe stays on this task: it mutates `subscriptions`,
+                // which the runtime-event branch below reads, and it never
+                // awaits. Every other action is dispatched on its own task so a
+                // long-running Pi command cannot stall event delivery.
                 let mut after_response = Vec::new();
                 let response = match routed {
                     Ok(RoutedAction::Subscribe { request_id, target, .. }) => {
@@ -1050,19 +1073,32 @@ async fn handle_websocket(mut socket: WebSocket, state: Arc<HostState>) {
                             Err(_) => Err(("invalid_target", "Runtime target is invalid".into())),
                         }
                     }
-                    Ok(action) => dispatch(action, &state).await,
+                    Ok(action) => {
+                        let state = Arc::clone(&state);
+                        let outgoing_tx = outgoing_tx.clone();
+                        tokio::spawn(async move {
+                            let outgoing = match dispatch(action, &state).await {
+                                Ok(value) => value,
+                                Err((code, message)) => {
+                                    structured_error(request_id.as_deref(), code, &message)
+                                }
+                            };
+                            let _ = outgoing_tx.send(Message::Text(outgoing.to_string().into()));
+                        });
+                        continue;
+                    }
                     Err((code, message)) => Err((code, message)),
                 };
                 let outgoing = match response {
                     Ok(value) => value,
                     Err((code, message)) => structured_error(request_id.as_deref(), code, &message),
                 };
-                if socket.send(Message::Text(outgoing.to_string().into())).await.is_err() {
+                if send_frame(outgoing).is_err() {
                     break;
                 }
                 for replay in after_response {
-                    if socket.send(Message::Text(replay.to_string().into())).await.is_err() {
-                        return;
+                    if send_frame(replay).is_err() {
+                        break 'connection;
                     }
                 }
             }
@@ -1079,8 +1115,7 @@ async fn handle_websocket(mut socket: WebSocket, state: Arc<HostState>) {
                                 == Some(client_id.as_str());
                             if !is_owner { continue; }
                         }
-                        let outgoing = runtime_event_frame(event);
-                        if socket.send(Message::Text(outgoing.to_string().into())).await.is_err() {
+                        if send_frame(runtime_event_frame(event)).is_err() {
                             break;
                         }
                     }
@@ -1091,7 +1126,7 @@ async fn handle_websocket(mut socket: WebSocket, state: Arc<HostState>) {
                             "event_sequence_gap",
                             "Runtime events were missed; request a snapshot",
                         );
-                        if socket.send(Message::Text(outgoing.to_string().into())).await.is_err() {
+                        if send_frame(outgoing).is_err() {
                             break;
                         }
                     }
@@ -1101,7 +1136,7 @@ async fn handle_websocket(mut socket: WebSocket, state: Arc<HostState>) {
             event = terminal_events.recv() => {
                 match event {
                     Ok((owner, outgoing)) if owner == terminal_owner => {
-                        if socket.send(Message::Text(outgoing.to_string().into())).await.is_err() {
+                        if send_frame(outgoing).is_err() {
                             break;
                         }
                     }
@@ -1112,7 +1147,7 @@ async fn handle_websocket(mut socket: WebSocket, state: Arc<HostState>) {
             event = git_events.recv() => {
                 match event {
                     Ok((owner, outgoing)) if owner == client_id => {
-                        if socket.send(Message::Text(outgoing.to_string().into())).await.is_err() {
+                        if send_frame(outgoing).is_err() {
                             break;
                         }
                     }
@@ -1122,8 +1157,27 @@ async fn handle_websocket(mut socket: WebSocket, state: Arc<HostState>) {
             }
         }
     }
+    drop(outgoing_tx);
+    let _ = writer.await;
     if let Ok(mut owners) = state.session_owners.lock() {
         owners.retain(|_, owner| owner != &client_id);
+    }
+}
+
+/// Most runtime commands are answered as soon as Pi has accepted them, so a
+/// short deadline keeps a wedged runtime from leaking a pending request.
+const RUNTIME_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// `prompt` is the exception. An extension command runs inline and its response
+/// only arrives once the handler returns — and a handler that opens a dialog
+/// does not return until the user has answered it, possibly several screens
+/// later. Bound that generously instead of at human-reaction speed; a 30s
+/// deadline turned every extension menu into a spurious "request failed".
+const RUNTIME_INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+
+fn runtime_request_timeout(command: &Value) -> Duration {
+    match command.get("type").and_then(Value::as_str) {
+        Some("prompt") => RUNTIME_INTERACTIVE_REQUEST_TIMEOUT,
+        _ => RUNTIME_REQUEST_TIMEOUT,
     }
 }
 
@@ -1350,7 +1404,12 @@ async fn dispatch(
             }
             let response = state
                 .runtimes
-                .request(&target, command, idempotency_key, Duration::from_secs(30))
+                .request(
+                    &target,
+                    command.clone(),
+                    idempotency_key,
+                    runtime_request_timeout(&command),
+                )
                 .await
                 .map_err(|message| ("runtime_request_failed", message))?;
             Ok(json!({
@@ -2223,7 +2282,8 @@ fn now_seconds() -> u64 {
 mod tests {
     use super::{
         append_pairing_token, extension_ui_requires_owner, messages_from_entries_response,
-        HostServer,
+        runtime_request_timeout, HostServer, RUNTIME_INTERACTIVE_REQUEST_TIMEOUT,
+        RUNTIME_REQUEST_TIMEOUT,
     };
     use crate::metadata_store::MetadataStore;
     use crate::native_pi_manager::NativePiManager;
@@ -2573,6 +2633,119 @@ mod tests {
         assert_eq!(event["type"], "runtime_event");
         assert_eq!(event["target"]["sessionId"], "session-a");
         assert_eq!(event["sequence"], 1);
+
+        host.stop();
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn prompts_get_the_interactive_deadline_and_everything_else_the_short_one() {
+        assert_eq!(
+            runtime_request_timeout(&json!({ "type": "prompt", "message": "/plan" })),
+            RUNTIME_INTERACTIVE_REQUEST_TIMEOUT
+        );
+        assert_eq!(
+            runtime_request_timeout(&json!({ "type": "get_commands" })),
+            RUNTIME_REQUEST_TIMEOUT
+        );
+        assert_eq!(
+            runtime_request_timeout(&json!({ "type": "steer", "message": "stop" })),
+            RUNTIME_REQUEST_TIMEOUT
+        );
+        assert_eq!(runtime_request_timeout(&json!({})), RUNTIME_REQUEST_TIMEOUT);
+    }
+
+    #[tokio::test]
+    async fn delivers_extension_dialog_events_while_a_runtime_request_is_still_pending() {
+        // An extension command such as `/plan` blocks its `prompt` response
+        // until the dialog it opens is answered. Dispatching that request on
+        // the socket task starved the event branch, so the dialog only reached
+        // the client when the 30s RPC timeout finally released the loop.
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!("picot-host-ws-pending-{nonce}"));
+        let public = temp.join("public");
+        fs::create_dir_all(&public).unwrap();
+        fs::write(public.join("index.html"), "Picot").unwrap();
+        let metadata = MetadataStore::open(&temp.join("picot.sqlite3")).unwrap();
+        let auth = Arc::new(Mutex::new(RemoteAuth::new(Arc::new(Mutex::new(metadata)))));
+        let runtimes = NativePiManager::new(32);
+        let target = RuntimeTarget::new("workspace-a", "session-a", "instance-a");
+        let mut fake = runtimes.register_in_memory(target.clone()).unwrap();
+        let host = HostServer::start(public, runtimes, auth, None)
+            .await
+            .unwrap();
+        let ws_url = host.origin().replace("http://", "ws://") + "/v2/ws";
+        let (mut socket, _) = tokio_tungstenite::connect_async(ws_url).await.unwrap();
+        socket
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                json!({
+                    "type": "hello",
+                    "protocolVersion": 2,
+                    "clientType": "desktop",
+                    "clientId": "desktop-a"
+                })
+                .to_string(),
+            ))
+            .await
+            .unwrap();
+        socket.next().await.unwrap().unwrap();
+        socket
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                json!({
+                    "type": "runtime_subscribe",
+                    "requestId": "subscribe-1",
+                    "target": target,
+                })
+                .to_string(),
+            ))
+            .await
+            .unwrap();
+        socket.next().await.unwrap().unwrap();
+
+        socket
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                json!({
+                    "type": "runtime_request",
+                    "requestId": "prompt-1",
+                    "target": target,
+                    "idempotencyKey": "key-1",
+                    "command": { "type": "prompt", "message": "/plan" },
+                })
+                .to_string(),
+            ))
+            .await
+            .unwrap();
+        // Pi received the prompt; deliberately never answer it, the way an
+        // extension command blocked on `ctx.ui.select()` does not.
+        let forwarded =
+            tokio::time::timeout(std::time::Duration::from_secs(1), fake.read_request())
+                .await
+                .expect("prompt forwarded to pi")
+                .unwrap();
+        assert_eq!(forwarded["type"], "prompt");
+
+        fake.write_frame(json!({
+            "type": "extension_ui_request",
+            "id": "dialog-1",
+            "method": "select",
+            "title": "Plan mode",
+            "options": ["Start Plan mode"],
+        }))
+        .await
+        .unwrap();
+
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), socket.next())
+            .await
+            .expect("dialog event delivered without waiting for the prompt response")
+            .unwrap()
+            .unwrap();
+        let event: serde_json::Value = serde_json::from_str(event.to_text().unwrap()).unwrap();
+        assert_eq!(event["type"], "runtime_event");
+        assert_eq!(event["event"]["type"], "extension_ui_request");
+        assert_eq!(event["event"]["id"], "dialog-1");
 
         host.stop();
         fs::remove_dir_all(temp).unwrap();

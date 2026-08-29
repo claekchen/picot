@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerCustomUiBridge } from "./custom-ui-bridge";
+import { registerHostUiCapabilityReporter } from "./host-ui-capabilities";
 import { handlePicotConfig } from "./picot-config";
 import projectTrust from "./project-trust";
 import { registerAutomaticSessionTitle } from "./session-title-auto";
@@ -13,8 +14,12 @@ type ConfigRequest = {
 export default function picotBridge(pi: ExtensionAPI) {
   projectTrust(pi);
   registerAutomaticSessionTitle(pi);
-  // No-op while CUSTOM_UI_OVERLAY_ENABLED is false (startup TUI flash).
+  // Bridges `ctx.ui.custom()` overlays into the WebView; pi's RPC stub would
+  // otherwise leave any extension awaiting one blocked forever.
   registerCustomUiBridge(pi);
+  // Surfaces the `ctx.ui` surfaces that stay terminal-only, so a command that
+  // silently does nothing in the GUI can say why.
+  registerHostUiCapabilityReporter(pi);
 
   // Configuration data plane. Invoked by the WebView via a native RPC prompt
   // (`/picot-config <json>`); extension commands run immediately without

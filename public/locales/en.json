@@ -878,6 +878,7 @@
         "thinkOff": "Think off",
         "extensions": "Extensions",
         "skills": "Skills",
+        "prompts": "Prompts",
         "faster": "Faster",
         "smarter": "Smarter",
         "betaUpdates": "Beta updates",
@@ -914,7 +915,8 @@
       "composer": {
         "composerSlashMenu": {
           "textcontent": {
-            "noMatchingCommands": "No matching commands"
+            "noMatchingCommands": "No matching commands",
+            "terminalOnly": "Terminal-only"
           },
           "ariaLabel": {
             "slashCommands": "Slash commands"

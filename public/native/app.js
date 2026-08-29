@@ -30,10 +30,15 @@ import { setupComposerImageAttachments } from "./composer/composer-images.js";
 import { setupComposerSlashMenu } from "./composer/composer-slash-menu.js";
 import { setupComposerSubmitHandling } from "./composer/composer-submit.js";
 import { renderQueuedMessages } from "./composer/queued-messages.js";
-import { buildCommandCatalog, resolveComposerInput } from "./composer/slash-commands.js";
+import {
+  buildCommandCatalog,
+  matchCatalogCommand,
+  resolveComposerInput,
+} from "./composer/slash-commands.js";
 import { setupCommandPalette } from "./extensions/command-palette.js";
 import { CustomUiPanel } from "./extensions/custom-ui-panel.js";
 import { showNativeDialog } from "./extensions/dialog.js";
+import { ExtensionCommandCompatibility } from "./extensions/extension-command-compatibility.js";
 import { ExtensionUiHost } from "./extensions/extension-ui-host.js";
 import { ExtensionWidgets } from "./extensions/extension-widgets.js";
 import { showInlineExtensionPrompt } from "./extensions/inline-extension-prompt.js";
@@ -326,6 +331,13 @@ const customUiPanel = new CustomUiPanel({
   getTarget: () => target,
   onError: showError,
 });
+// Remembers which extension commands rely on terminal-only `ctx.ui` surfaces,
+// so the slash menu can badge them instead of leaving the user with a command
+// that silently does nothing.
+const commandCompatibility = new ExtensionCommandCompatibility({
+  workspaceId: target.workspaceId,
+  onLearn: (record) => messageRenderer.renderSystemMessage(record.message),
+});
 const extensionWidgets = new ExtensionWidgets({
   aboveEditor: document.getElementById("extension-widgets-above"),
   belowEditor: document.getElementById("extension-widgets-below"),
@@ -501,6 +513,9 @@ const extensionUi = new ExtensionUiHost({
       // Custom extension UI panels (ctx.ui.custom) are bridged over notify too;
       // they render as an overlay rather than a transcript entry.
       if (customUiPanel.consumeNotify(request)) return;
+      // Terminal-only capability reports are a data plane as well; the store
+      // renders its own one-line explanation through onLearn.
+      if (commandCompatibility.consumeNotify(request)) return;
       // rpiv-todo's /todos command emits a centered notify transcript. Picot
       // already mirrors the same state natively, so expand the panel instead
       // of rendering a duplicate system message. When nothing is mirrored (the
@@ -796,7 +811,7 @@ const imageAttachments = setupComposerImageAttachments({
 const slashMenu = setupComposerSlashMenu({
   input,
   container: skillSlashMenu,
-  getCommands: () => commandCatalog.values(),
+  getCommands: () => commandCompatibility.decorate(commandCatalog.values()),
 });
 setupCommandPalette({
   button: commandButton,
@@ -930,8 +945,7 @@ try {
   // Two-phase load: render session history from disk immediately while Pi
   // warms up, then overlay the authoritative Pi snapshot when it arrives.
   // Skip the fast path for brand-new (temporary) sessions — they have no
-  // saved JSONL file yet and go straight to the Pi snapshot. Focus the
-  // composer so the user can start typing right away.
+  // saved JSONL file yet and go straight to the Pi snapshot.
   if (!target.sessionId.startsWith("temporary-")) {
     const diskResult = await data
       .readSessionMessages(target.workspaceId, target.sessionId)
@@ -965,8 +979,10 @@ try {
     console.info("[SESSION-LOAD] initial disk fallback skipped for temporary session", {
       sessionId: target.sessionId,
     });
-    input.focus();
   }
+  // Focus the composer for every session, not just brand-new ones, so the user
+  // can start typing as soon as the page opens.
+  input.focus();
 
   const snapshotStartedAt = performance.now();
   await hydrateSnapshotOnce();
@@ -1107,6 +1123,7 @@ async function loadCommands() {
   commandCatalog = buildCommandCatalog({
     nativeCommands: result.response?.data?.commands ?? [],
   });
+  commandCompatibility.prune(commandCatalog.values());
 }
 
 function setupSessionSidebar() {
@@ -1668,6 +1685,10 @@ async function sendComposerInput({ altKey }) {
   input.scrollTop = 0;
   composerAutoResize.sync();
   imageAttachments.clear();
+  // Open the attribution window before the command runs: an extension command
+  // executes immediately over RPC, so a capability report can arrive while the
+  // request is still in flight.
+  commandCompatibility.beginCommand(matchCatalogCommand(value, commandCatalog)?.command);
   try {
     await runtime.request(intent.command, target, { idempotencyKey: randomId() });
   } catch (error) {

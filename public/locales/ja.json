@@ -878,6 +878,7 @@
         "thinkOff": "思考オフ",
         "extensions": "拡張機能",
         "skills": "スキル",
+        "prompts": "プロンプト",
         "faster": "速め",
         "smarter": "賢め",
         "betaUpdates": "ベータアップデート",
@@ -914,7 +915,8 @@
       "composer": {
         "composerSlashMenu": {
           "textcontent": {
-            "noMatchingCommands": "一致するコマンドがありません"
+            "noMatchingCommands": "一致するコマンドがありません",
+            "terminalOnly": "ターミナル専用"
           },
           "ariaLabel": {
             "slashCommands": "スラッシュコマンド"
