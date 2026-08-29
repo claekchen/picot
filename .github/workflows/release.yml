@@ -258,7 +258,14 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
-          appimage="$(ls "$PWD"/src-tauri/target/release/bundle/appimage/*.AppImage | head -1)"
+          # The cargo target dir is the workspace root, not src-tauri/target.
+          # Search rather than hardcode, so a layout change fails loudly here
+          # instead of silently skipping the check.
+          appimage="$(find "$PWD" -type f -name '*.AppImage' -path '*/bundle/appimage/*' | head -1)"
+          if [ -z "$appimage" ]; then
+            echo "::error::no AppImage found under $PWD"
+            exit 1
+          fi
           expected="$(sha256sum "$PWD/src-tauri/resources/pi/pi" | cut -d' ' -f1)"
           workdir="$RUNNER_TEMP/appimage-pi-check"
           rm -rf "$workdir"
