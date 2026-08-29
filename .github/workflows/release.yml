@@ -60,21 +60,40 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
 
-      # Cache the cargo registry + git db + target dir so successful crate
-      # downloads survive across runs. This both speeds up builds and makes
-      # transient crates.io download failures far less likely to break a
-      # release (the crate is usually already on disk from a prior run).
-      - name: Cache cargo + build artifacts
-        uses: actions/cache@v5
+      # Cache the cargo registry + git db + build artifacts. This both speeds
+      # up builds and makes transient crates.io download failures far less
+      # likely to break a release (the crate is usually already on disk from a
+      # prior run).
+      #
+      # Two things a hand-rolled `actions/cache` step here got wrong, each of
+      # which on its own reduced every release to a from-scratch compile of the
+      # whole dependency graph (~11-13 min of the ~15 min wall time):
+      #
+      #  1. It cached `src-tauri/target`, which does not exist. The root
+      #     `.cargo/config.toml` sets `target-dir = "target"`, and cargo
+      #     resolves that relative to the config file -- so build output lands
+      #     in the *repo root* `target/`. The saved caches were ~40 MB of bare
+      #     registry with no compiled artifacts in them at all.
+      #  2. Actions caches are scoped by ref and this workflow only runs on
+      #     tags, so every cache it saved landed in a `refs/tags/vX` scope that
+      #     no later run can read (a run sees its own ref plus the default
+      #     branch, nothing else). A 100% miss rate, forever, and every run
+      #     added another few GB of unreadable entries to the repo's 10 GB
+      #     cache quota.
+      #
+      # Hence: `../target` relative to the `src-tauri` workspace root, and
+      # saving happens in cache-warm.yml on main -- the one scope every tag run
+      # can restore from. `save-if` keeps tag runs read-only so they stop
+      # filling the quota with unreadable entries.
+      - name: Restore cargo + build artifacts cache
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            src-tauri/target
-          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: |
-            cargo-${{ runner.os }}-${{ runner.arch }}-
+          workspaces: src-tauri -> ../target
+          # Must stay identical to cache-warm.yml, along with the CARGO_* env
+          # above: rust-cache hashes every CARGO*/RUST* variable into the key,
+          # so a difference in either place silently stops the cache resolving.
+          shared-key: picot-release-${{ matrix.os }}-${{ matrix.rust_target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -186,8 +205,7 @@ jobs:
       - name: Install patchelf shim for linuxdeploy (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y patchelf
+          # patchelf itself comes from the "Install Linux dependencies" step.
           mkdir -p "$RUNNER_TEMP/patchelf-shim"
           cat > "$RUNNER_TEMP/patchelf-shim/patchelf" <<'SH'
           #!/bin/sh
