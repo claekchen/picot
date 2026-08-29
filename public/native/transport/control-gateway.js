@@ -45,6 +45,12 @@ export class HostControlGateway {
     return Array.isArray(frame?.packages) ? frame.packages : [];
   }
 
+  async checkPiPackageUpdates(workspaceId) {
+    const frame = await this.#request("check_pi_package_updates", { workspaceId });
+    // Only packages with an actual update are reported (source/scope/available).
+    return Array.isArray(frame?.updates) ? frame.updates : [];
+  }
+
   async installPiPackage(source, { local = false } = {}) {
     await this.#request("install_pi_package", { source, local });
   }
@@ -70,6 +76,12 @@ export class HostControlGateway {
   async restartRuntime(workspaceId, sessionId) {
     const frame = await this.#request("restart_runtime", { workspaceId, sessionId });
     return frame?.instanceId ?? null;
+  }
+
+  async resolveWorkspace(projectPath) {
+    const frame = await this.#request("resolve_workspace", { projectPath });
+    if (!frame?.workspaceId) throw new Error("Host returned an invalid workspace id");
+    return frame.workspaceId;
   }
 
   async listInstalledApps() {

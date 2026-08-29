@@ -1,11 +1,15 @@
 import { t } from "../../i18n.js";
 import { applyTheme, getCurrentTheme, themes } from "../../themes.js";
 import { applyLoadingPlaceholder, clearLoadingPlaceholder } from "../../ui/loading-placeholder.js";
+import { setupRemoteAccessHeader } from "../workspace/remote-access-header.js";
+import { setupUpdateIndicator } from "../workspace/update-indicator.js";
 import { loadCostDashboard } from "./cost-dashboard.js";
 import { setupLanguageSelector } from "./language-selector.js";
+import { setupModelsPage } from "./models-page.js";
 import { setupPackageBrowse } from "./package-browse.js";
 import { setupPackageManager } from "./package-manager.js";
 import { setupPackageSkillsTab } from "./package-skills-tab.js";
+import { setupRemoteAccessPanel } from "./remote-access.js";
 import { setupSettingsConfig } from "./settings-config.js";
 import { setupSettingsToggles } from "./settings-toggles.js";
 import { setupDiscoveredSkillsTab } from "./skills-discovered-tab.js";
@@ -28,6 +32,7 @@ export function setupSettingsPanel({
   getWorkspaceId,
   control,
   configGateway,
+  oauthGateway,
   onModelConfigurationChanged,
   runtime,
   getTarget,
@@ -35,6 +40,7 @@ export function setupSettingsPanel({
   notify,
   onRestarted,
   onThinkingLevelChanged,
+  desktopClient = false,
 } = {}) {
   const panel = document.getElementById("settings-panel");
   const openBtn = document.getElementById("settings-btn");
@@ -63,6 +69,15 @@ export function setupSettingsPanel({
   const appVersionValue = document.getElementById("setting-app-version-value");
   const costDashboard = document.getElementById("settings-cost-dashboard");
   const packageBrowse = setupPackageBrowse(control, { notify });
+  const updateIndicator = setupUpdateIndicator({
+    buttonEl: document.getElementById("package-update-indicator"),
+    onOpen: () => openSettings("extensions"),
+  });
+  setupRemoteAccessHeader({
+    buttonEl: document.getElementById("remote-access-header-btn"),
+    onOpen: () => openSettings("remote-access"),
+    visible: desktopClient,
+  });
   const packageManager = setupPackageManager({
     control,
     data,
@@ -71,9 +86,13 @@ export function setupSettingsPanel({
     getSessionId: () => getTarget?.()?.sessionId,
     onRestarted,
     onBrowseRevealed: () => void packageBrowse.load(),
+    // Mirror the update probe result onto the header pill so updates stay
+    // visible after the settings panel is closed.
+    onUpdatesChecked: (count) => updateIndicator.setCount(count),
   });
-  const config = configGateway
-    ? setupSettingsConfig({ configGateway, onModelConfigurationChanged })
+  const config = configGateway ? setupSettingsConfig({ configGateway }) : null;
+  const modelsPage = configGateway
+    ? setupModelsPage({ configGateway, oauthGateway, onModelConfigurationChanged })
     : null;
   const thinkingControl = setupThinkingEffortControl({
     runtime,
@@ -116,6 +135,7 @@ export function setupSettingsPanel({
         showError: showSkillsError,
       })
     : null;
+  const remoteAccess = setupRemoteAccessPanel();
   const packageTab = setupPackageSkillsTab({
     container: document.getElementById("settings-package-skills"),
     rpcCommand: skillsRpc,
@@ -156,9 +176,18 @@ export function setupSettingsPanel({
 
   function loadConfiguration() {
     if (!config) return;
-    void config.loadApiKeysPanel();
     void config.loadInlineConfigEditor();
-    void config.loadInlineModelsEditor();
+    void config.loadAgentsMdEditor();
+    void config.loadAppendSystemMdEditor();
+  }
+
+  function loadModels() {
+    if (!modelsPage) return;
+    void modelsPage.loadApiKeysPanel();
+    void modelsPage.loadInlineModelsEditor();
+    // Preload the OAuth capability surface so Codex renders with its login
+    // entry immediately instead of probing on first click.
+    void modelsPage.loadOAuthCapability();
   }
 
   function setExtensionsView(mode) {
@@ -174,7 +203,9 @@ export function setupSettingsPanel({
     if (marketplaceMode) {
       void packageBrowse.load();
     } else {
-      void packageManager.load();
+      // Force a full reload + update probe on every visit to the installed view:
+      // staleness here would show wrong versions and miss available updates.
+      void packageManager.load(true);
     }
   }
 
@@ -193,6 +224,8 @@ export function setupSettingsPanel({
     }
     if (target === "skills") void skillsPage.activate();
     if (target === "configuration") loadConfiguration();
+    if (target === "models") loadModels();
+    if (target === "remote-access") void remoteAccess.load();
   }
 
   function buildThemeGrid() {
@@ -334,7 +367,9 @@ export function setupSettingsPanel({
     });
   }
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !panel.classList.contains("hidden")) closeSettings();
+    if (event.key !== "Escape" || panel.classList.contains("hidden")) return;
+    if (event.defaultPrevented) return;
+    closeSettings();
   });
   window.addEventListener("hashchange", restoreFromHash);
   restoreFromHash();

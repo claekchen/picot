@@ -237,6 +237,32 @@ describe("SessionSidebar.render", () => {
     expect(item.querySelector(".session-title").textContent).toBe("New title");
   });
 
+  it("loads a targetless launcher catalog with an explicit cache scope", async () => {
+    const loadSessions = vi.fn().mockResolvedValue({
+      sessions: [
+        {
+          id: "s-launcher",
+          timestamp: new Date().toISOString(),
+          name: "Launcher session",
+          projectPath: "/ws-launcher",
+          projectName: "ws-launcher",
+          isCurrentWorkspace: false,
+        },
+      ],
+    });
+    const { sidebar, container, data } = makeSidebar([], {
+      getTarget: () => null,
+      cacheScope: "launcher",
+      loadSessions,
+    });
+
+    await sidebar.load();
+
+    expect(loadSessions).toHaveBeenCalledOnce();
+    expect(data.listAllSessions).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Launcher session");
+  });
+
   it("retries transient load failures before showing the manual retry error", async () => {
     vi.useFakeTimers();
     const { sidebar, container, data } = makeSidebar([]);
@@ -758,6 +784,74 @@ describe("SessionSidebar.render", () => {
     expect(control.deleteSessions).toHaveBeenCalledWith(["s-arc-1", "s-arc-2"]);
     expect(container.querySelector(".archived-group")).toBeFalsy();
     expect(sidebar.isArchived("s-arc-1")).toBe(false);
+  });
+
+  it("workspace context menu deletes a project's deletable sessions after confirming", async () => {
+    const { sidebar, container, control } = makeSidebar([
+      { id: "s-1", timestamp: new Date().toISOString(), name: "One" },
+      { id: "s-2", timestamp: new Date().toISOString(), name: "Two" },
+      { id: "s-live", timestamp: new Date().toISOString(), name: "Live" },
+    ]);
+    await sidebar.load();
+    sidebar.setActive("s-1"); // the open session is never batch-deleted
+    sidebar.setStreaming("s-live", true); // a running session is never batch-deleted
+
+    const header = container.querySelector(".project-group-header");
+    header.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 8,
+        clientY: 8,
+      }),
+    );
+    const rows = [...document.querySelectorAll(".session-context-menu .context-menu-item")];
+    const deleteRow = rows.find((el) => el.textContent === "Delete all sessions");
+    expect(deleteRow).toBeTruthy();
+
+    control.deleteSessions.mockResolvedValueOnce({ deleted: ["s-2"], errors: [] });
+    deleteRow.click();
+    document.querySelector(".sidebar-confirm-yes").click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Only the idle, non-active session was sent; it disappears from the
+    // list while the active and streaming sessions survive.
+    expect(control.deleteSessions).toHaveBeenCalledWith(["s-2"]);
+    expect(container.textContent).toContain("One");
+    expect(container.textContent).toContain("Live");
+    expect(container.textContent).not.toContain("Two");
+  });
+
+  it("workspace delete-all works from the pinned-workspace menu shape (no sessions array)", async () => {
+    const { sidebar, container, control } = makeSidebar([
+      { id: "pin-1", timestamp: new Date().toISOString(), name: "Pinned One" },
+      { id: "pin-2", timestamp: new Date().toISOString(), name: "Pinned Two" },
+      {
+        id: "sa-1",
+        timestamp: new Date().toISOString(),
+        name: "Super Agent",
+        projectPath: "/Users/me/.pi/agent/super-agent",
+      },
+    ]);
+    await sidebar.load();
+    sidebar.setActive("pin-1"); // the open session is never batch-deleted
+
+    // The pinned-workspace context menu passes only { path, name } — no
+    // sessions array (session-sidebar.js #renderPinnedWorkspaces call site).
+    // Regression: deleteWorkspaceSessions derived ids from project?.sessions
+    // and silently no-op'd for this shape.
+    control.deleteSessions.mockResolvedValueOnce({ deleted: ["pin-2"], errors: [] });
+    const deleting = sidebar.deleteWorkspaceSessions({ path: "/ws-1", name: "ws-1" });
+    document.querySelector(".sidebar-confirm-yes").click();
+    await deleting;
+
+    // Ids derive from this.sessions filtered by projectPath === path, with
+    // the same super-agent exclusion archiveProject applies; the active
+    // session stays.
+    expect(control.deleteSessions).toHaveBeenCalledWith(["pin-2"]);
+    expect(container.textContent).toContain("Pinned One");
+    expect(container.textContent).not.toContain("Pinned Two");
   });
 
   it("cancelling the delete-all confirm dialog keeps archived sessions", async () => {

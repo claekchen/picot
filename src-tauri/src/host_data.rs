@@ -165,6 +165,14 @@ pub struct DeleteSessionsResult {
     pub errors: Vec<String>,
 }
 
+/// Verbatim JSONL tree snapshot for the Info panel's session history.
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionTreeSnapshot {
+    pub entries: Vec<serde_json::Value>,
+    pub leaf_id: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionSearchMatch {
@@ -267,7 +275,8 @@ pub struct HostDataPlane {
 }
 
 fn message_with_entry_id(mut message: serde_json::Value, entry_id: &str) -> serde_json::Value {
-    if message.get("role").and_then(serde_json::Value::as_str) != Some("user") {
+    let role = message.get("role").and_then(serde_json::Value::as_str);
+    if role != Some("user") && role != Some("assistant") {
         return message;
     }
     if let Some(object) = message.as_object_mut() {
@@ -277,6 +286,33 @@ fn message_with_entry_id(mut message: serde_json::Value, entry_id: &str) -> serd
         );
     }
     message
+}
+
+/// Remove a session file trash-first: move it to the OS trash via the
+/// `trash` CLI when available (matching Pi TUI's deleteSessionFile policy),
+/// falling back to a permanent unlink otherwise. A missing `trash` binary
+/// (e.g. Windows) simply fails the spawn and falls back to unlink.
+fn remove_session_file_trash_first_with(
+    path: &std::path::Path,
+    spawn_trash: impl Fn(&std::path::Path) -> bool,
+) -> std::io::Result<()> {
+    // Trash reports success, or the file is already gone — both are success.
+    if spawn_trash(path) || !path.exists() {
+        return Ok(());
+    }
+    std::fs::remove_file(path)
+}
+
+fn remove_session_file_trash_first(path: &std::path::Path) -> std::io::Result<()> {
+    remove_session_file_trash_first_with(path, |target| {
+        std::process::Command::new("trash")
+            .arg(target)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    })
 }
 
 /// Parse a number from `git diff --shortstat` output for a given keyword.
@@ -408,6 +444,7 @@ impl HostDataPlane {
         &self,
         workspace_id: &str,
         relative_path: &str,
+        show_hidden: bool,
     ) -> Result<Vec<FileEntry>, HostDataError> {
         let root = self.workspace_root(workspace_id)?;
         let root = root.as_path();
@@ -418,6 +455,9 @@ impl HostDataPlane {
         let mut entries = std::fs::read_dir(&requested)
             .map_err(|error| HostDataError::Io(error.to_string()))?
             .filter_map(Result::ok)
+            // Dotfiles stay hidden unless the caller explicitly opts in via
+            // the File panel's show-hidden toggle (same default as Pi TUI).
+            .filter(|entry| show_hidden || !entry.file_name().to_string_lossy().starts_with('.'))
             .filter_map(|entry| {
                 let file_type = entry.file_type().ok()?;
                 let kind = if file_type.is_dir() {
@@ -1068,6 +1108,94 @@ impl HostDataPlane {
         Ok(chain)
     }
 
+    /// Full session JSONL tree snapshot for the Info panel: every id-carrying
+    /// entry verbatim (hidden entries keep the parent/child chain connected
+    /// across skipped nodes) plus the derived active leaf. The leaf uses the
+    /// same last-message-tip rule as `read_session_messages`, so the tree and
+    /// the main-chat transcript always agree on which branch is active.
+    pub fn read_session_tree(
+        &self,
+        workspace_id: &str,
+        session_id: &str,
+    ) -> Result<SessionTreeSnapshot, HostDataError> {
+        let path = self
+            .resolve_session_path(workspace_id, session_id)?
+            .ok_or_else(|| HostDataError::Io(format!("session {session_id} not found")))?;
+
+        let file = std::fs::File::open(&path).map_err(|e| HostDataError::Io(e.to_string()))?;
+
+        let mut entries: Vec<serde_json::Value> = Vec::new();
+        // Parallel (id, parentId, is-message) index for the tip walk.
+        let mut index: Vec<(String, Option<String>, bool)> = Vec::new();
+        for line in BufReader::new(file).lines() {
+            let Ok(line) = line else { continue };
+            if line.trim().is_empty() {
+                continue;
+            }
+            let Ok(entry) = serde_json::from_str::<serde_json::Value>(&line) else {
+                continue;
+            };
+            let Some(id) = entry.get("id").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            let parent_id = entry
+                .get("parentId")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned);
+            let is_message =
+                entry.get("type").and_then(serde_json::Value::as_str) == Some("message");
+            index.push((id.to_owned(), parent_id, is_message));
+            entries.push(entry);
+        }
+
+        if entries.is_empty() {
+            return Ok(SessionTreeSnapshot {
+                entries,
+                leaf_id: None,
+            });
+        }
+
+        let id_to_idx: HashMap<&str, usize> = index
+            .iter()
+            .enumerate()
+            .map(|(i, (id, _, _))| (id.as_str(), i))
+            .collect();
+        // Same tip rule as read_session_messages: the LAST message entry in the
+        // file heads the active branch. Verify its parent chain resolves (walk
+        // to root purely as a cycle guard) and report the tip itself as leaf.
+        let Some(tip_idx) = index
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, (_, _, is_message))| *is_message)
+            .map(|(i, _)| i)
+        else {
+            return Ok(SessionTreeSnapshot {
+                entries,
+                leaf_id: None,
+            });
+        };
+        let mut visited = std::collections::HashSet::new();
+        let mut current = tip_idx;
+        let mut chain_ok = true;
+        loop {
+            if !visited.insert(current) {
+                chain_ok = false; // cycle guard
+                break;
+            }
+            match index[current].1.as_deref() {
+                None => break,
+                Some(pid) => match id_to_idx.get(pid) {
+                    Some(&idx) => current = idx,
+                    None => break,
+                },
+            }
+        }
+        let leaf_id = chain_ok.then(|| index[tip_idx].0.clone());
+
+        Ok(SessionTreeSnapshot { entries, leaf_id })
+    }
+
     pub fn list_sessions(&self, workspace_id: &str) -> Result<Vec<SessionSummary>, HostDataError> {
         let workspace = self.workspace_root(workspace_id)?;
         let mut sessions = self.collect_sessions(Some(workspace.as_path()))?;
@@ -1088,16 +1216,31 @@ impl HostDataPlane {
         &self,
         workspace_id: &str,
     ) -> Result<Vec<SessionSummary>, HostDataError> {
-        let current = self.workspace_root(workspace_id).ok();
+        let current = self
+            .workspace_root(workspace_id)
+            .ok()
+            .map(|root| (workspace_id, root));
+        self.list_all_sessions_with_current(current)
+    }
+
+    /// List saved sessions for the targetless `/app` launcher. No workspace is
+    /// marked current, so selecting any result follows the existing
+    /// cross-project resolution flow before navigating to its canonical route.
+    pub fn list_launcher_sessions(&self) -> Result<Vec<SessionSummary>, HostDataError> {
+        self.list_all_sessions_with_current(None)
+    }
+
+    fn list_all_sessions_with_current(
+        &self,
+        current: Option<(&str, PathBuf)>,
+    ) -> Result<Vec<SessionSummary>, HostDataError> {
         let mut sessions = self.collect_sessions(None)?;
-        for session in &mut sessions {
-            let project = PathBuf::from(&session.project_path);
-            if current
-                .as_ref()
-                .is_some_and(|root| same_dir(root, &project))
-            {
-                session.workspace_id = workspace_id.to_owned();
-                session.is_current_workspace = true;
+        if let Some((workspace_id, root)) = current {
+            for session in &mut sessions {
+                if same_dir(&root, Path::new(&session.project_path)) {
+                    session.workspace_id = workspace_id.to_owned();
+                    session.is_current_workspace = true;
+                }
             }
         }
         sessions.sort_by_key(|session| std::cmp::Reverse(session.activity_at_ms));
@@ -1149,7 +1292,7 @@ impl HostDataPlane {
                 if !requested.contains(session_id.as_str()) {
                     continue;
                 }
-                match std::fs::remove_file(&path) {
+                match remove_session_file_trash_first(&path) {
                     Ok(()) => {
                         deleted.insert(session_id);
                     }
@@ -2240,27 +2383,59 @@ mod tests {
         let workspace = temp.join("workspace");
         fs::create_dir_all(workspace.join("src")).unwrap();
         fs::write(workspace.join("README.md"), "read me").unwrap();
+        fs::write(workspace.join(".hidden"), "dotfile").unwrap();
         fs::write(temp.join("secret.txt"), "secret").unwrap();
         let data =
             HostDataPlane::new(HashMap::from([("workspace-a".into(), workspace.clone())])).unwrap();
 
-        let entries = data.list_files("workspace-a", "").unwrap();
+        let entries = data.list_files("workspace-a", "", false).unwrap();
         assert_eq!(entries[0].name, "src");
         assert_eq!(entries[0].kind, FileKind::Directory);
         assert_eq!(entries[1].relative_path, "README.md");
         assert_eq!(
-            data.list_files("workspace-a", "../"),
+            data.list_files("workspace-a", "../", false),
             Err(HostDataError::InvalidRelativePath)
         );
         assert_eq!(
-            data.list_files("missing", ""),
+            data.list_files("missing", "", false),
             Err(HostDataError::UnknownWorkspace)
         );
         fs::remove_dir_all(temp).unwrap();
     }
 
     #[test]
-    fn read_session_messages_preserves_user_entry_ids() {
+    fn list_files_hides_dotfiles_by_default_and_shows_them_when_opted_in() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!("picot-host-hidden-{nonce}"));
+        let workspace = temp.join("workspace");
+        fs::create_dir_all(workspace.join(".git")).unwrap();
+        fs::write(workspace.join(".env"), "dotfile").unwrap();
+        fs::write(workspace.join("visible.txt"), "visible").unwrap();
+        let data = HostDataPlane::new(HashMap::from([("workspace-a".into(), workspace)])).unwrap();
+
+        let hidden = data
+            .list_files("workspace-a", "", false)
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.name)
+            .collect::<Vec<_>>();
+        assert_eq!(hidden, vec!["visible.txt"]);
+
+        let shown = data
+            .list_files("workspace-a", "", true)
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.name)
+            .collect::<Vec<_>>();
+        assert_eq!(shown, vec![".git", ".env", "visible.txt"]);
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn read_session_messages_preserves_user_and_assistant_entry_ids() {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -2292,9 +2467,77 @@ mod tests {
             messages,
             vec![
                 json!({ "role": "user", "content": "hello", "entryId": "user-1" }),
-                json!({ "role": "assistant", "content": [{ "type": "text", "text": "hi" }] }),
+                json!({ "role": "assistant", "content": [{ "type": "text", "text": "hi" }], "entryId": "assistant-1" }),
             ]
         );
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn read_session_tree_returns_full_entries_and_derived_leaf() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!("picot-host-tree-{nonce}"));
+        let workspace = temp.join("workspace");
+        let sessions = temp.join("sessions/project");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&sessions).unwrap();
+        // Branching session: active path u1→a1→u2; inactive sibling u3→a3;
+        // hidden toolResult + compaction entries stay in the snapshot.
+        let cwd = serde_json::to_string(&workspace.to_string_lossy()).unwrap();
+        let lines: Vec<String> = vec![
+            format!("{{\"type\":\"session\",\"id\":\"session-a\",\"timestamp\":\"2026-01-01\",\"cwd\":{cwd}}}"),
+            "{\"type\":\"message\",\"id\":\"u1\",\"parentId\":null,\"message\":{\"role\":\"user\",\"content\":\"q1\"}}".into(),
+            "{\"type\":\"message\",\"id\":\"tr1\",\"parentId\":\"u1\",\"message\":{\"role\":\"toolResult\",\"content\":[]}}".into(),
+            "{\"type\":\"compaction\",\"id\":\"c1\",\"parentId\":\"tr1\"}".into(),
+            "{\"type\":\"message\",\"id\":\"a1\",\"parentId\":\"c1\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ans\"}]}}".into(),
+            "{\"type\":\"message\",\"id\":\"u2\",\"parentId\":\"a1\",\"message\":{\"role\":\"user\",\"content\":\"q2\"}}".into(),
+            "{\"type\":\"message\",\"id\":\"u3\",\"parentId\":\"a1\",\"message\":{\"role\":\"user\",\"content\":\"side\"}}".into(),
+            "{\"type\":\"message\",\"id\":\"a3\",\"parentId\":\"u3\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"side-ans\"}]}}".into(),
+        ];
+        fs::write(sessions.join("session-a.jsonl"), lines.join("\n") + "\n").unwrap();
+        let data = HostDataPlane::new(HashMap::from([("workspace-a".into(), workspace)]))
+            .unwrap()
+            .with_session_root(temp.join("sessions"));
+
+        let tree = data.read_session_tree("workspace-a", "session-a").unwrap();
+
+        // Every id-carrying entry survives verbatim (hidden ones included).
+        let ids: Vec<&str> = tree
+            .entries
+            .iter()
+            .map(|entry| entry["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            ids,
+            vec!["session-a", "u1", "tr1", "c1", "a1", "u2", "u3", "a3"]
+        );
+        // Active leaf follows the last-message tip rule (same as the transcript):
+        // the final message entry in the file heads the active branch.
+        assert_eq!(tree.leaf_id.as_deref(), Some("a3"));
+
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn read_session_tree_missing_session_errors() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!("picot-host-tree-missing-{nonce}"));
+        let workspace = temp.join("workspace");
+        let sessions = temp.join("sessions/project");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&sessions).unwrap();
+        let data = HostDataPlane::new(HashMap::from([("workspace-a".into(), workspace)]))
+            .unwrap()
+            .with_session_root(temp.join("sessions"));
+
+        let result = data.read_session_tree("workspace-a", "nope");
+        assert!(result.is_err());
         fs::remove_dir_all(temp).unwrap();
     }
 
@@ -2314,7 +2557,7 @@ mod tests {
         symlink(&outside, workspace.join("escape")).unwrap();
         let data = HostDataPlane::new(HashMap::from([("workspace-a".into(), workspace)])).unwrap();
         assert_eq!(
-            data.list_files("workspace-a", "escape"),
+            data.list_files("workspace-a", "escape", false),
             Err(HostDataError::OutsideWorkspace)
         );
         fs::remove_dir_all(temp).unwrap();
@@ -2375,6 +2618,14 @@ mod tests {
         assert!(foreign.workspace_id.is_empty());
         assert!(foreign.project_path.ends_with("other"));
         assert_eq!(foreign.project_name, "other");
+
+        // The canonical /app launcher is targetless: it returns the same
+        // catalog without inventing a current workspace.
+        let launcher = data.list_launcher_sessions().unwrap();
+        assert_eq!(launcher.len(), 2);
+        assert!(launcher
+            .iter()
+            .all(|session| !session.is_current_workspace && session.workspace_id.is_empty()));
         fs::remove_dir_all(temp).unwrap();
     }
 
@@ -2511,6 +2762,32 @@ mod tests {
         let all = data.list_all_sessions("workspace-a").unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].id, "session-a");
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn remove_session_file_trash_first_prefers_trash_and_falls_back_to_unlink() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!("picot-host-trash-first-{nonce}"));
+        fs::create_dir_all(&temp).unwrap();
+        let file = temp.join("session.jsonl");
+        fs::write(&file, "{}").unwrap();
+
+        // Trash succeeds → Ok, and the fallback unlink is never attempted
+        // (proven by a second call on the same still-present file below).
+        assert!(super::remove_session_file_trash_first_with(&file, |_| true).is_ok());
+        assert!(file.exists());
+
+        // Trash fails → permanent unlink fallback removes the file.
+        assert!(super::remove_session_file_trash_first_with(&file, |_| false).is_ok());
+        assert!(!file.exists());
+
+        // Trash fails but the file is already gone → still Ok.
+        assert!(super::remove_session_file_trash_first_with(&file, |_| false).is_ok());
+
         fs::remove_dir_all(temp).unwrap();
     }
 

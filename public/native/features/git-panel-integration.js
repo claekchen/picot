@@ -23,6 +23,9 @@ export function setupGitPanel({
   const closeBtn = document.getElementById("file-sidebar-close");
   const path = document.getElementById("file-sidebar-path");
   const up = document.getElementById("file-sidebar-up");
+  const filesRefresh = document.getElementById("file-sidebar-refresh");
+  const filesToggleHidden = document.getElementById("file-sidebar-toggle-hidden");
+  const gitRefresh = document.getElementById("git-panel-refresh");
   const finder = document.getElementById("file-sidebar-finder");
   if (!runtime || !container) return null;
 
@@ -76,8 +79,26 @@ export function setupGitPanel({
     } else if (normalized.type === "git_command_ack") panel.refresh();
     else if (normalized.type === "git_command_failed") {
       client.consumeWriteFailure(normalized);
-      if (isGitUnavailableError(normalized.error)) panel.setSnapshot(null);
-      else panel.applyCommitFailure(normalized.error);
+      if (isGitUnavailableError(normalized.error)) {
+        panel.setSnapshot(null);
+      } else if (
+        // A status probe against a non-repository workspace fails with git's
+        // "not a git repository" error and never produces a git_status frame,
+        // so the panel would otherwise sit on the generic "no status loaded"
+        // message. Surface the real reason instead — but only for the current
+        // status probe, never for stale or concurrent non-status failures.
+        panel.isStatusFailure(normalized.requestId) &&
+        typeof normalized.error === "string" &&
+        normalized.error.includes("not a git repository")
+      ) {
+        panel.setNotGitRepo(true);
+        // Runtime parity for the startup probe in project-header: once git
+        // itself proves the workspace is not a repository, hide the header
+        // pill immediately instead of leaving an entry that cannot work.
+        document.getElementById("diff-sidebar-toggle")?.classList.add("hidden");
+      } else {
+        panel.applyCommitFailure(normalized.error);
+      }
     }
   };
 
@@ -112,11 +133,17 @@ export function setupGitPanel({
     fileList?.classList.toggle("hidden", showGit);
     path?.classList.toggle("hidden", showGit);
     up?.classList.toggle("hidden", showGit);
+    filesRefresh?.classList.toggle("hidden", showGit);
+    filesToggleHidden?.classList.toggle("hidden", showGit);
+    gitRefresh?.classList.toggle("hidden", !showGit);
     finder?.classList.toggle("hidden", showGit);
     applyChrome();
     if (showGit) panel.refresh();
   };
 
+  // The Git status refresh lives in the sidebar header (shared with the Files
+  // controls) instead of inside the panel toolbar.
+  gitRefresh?.addEventListener("click", () => void panel.refresh());
   setTab("files");
 
   const unsubscribe = runtime.subscribe((frame) => {

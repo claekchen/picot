@@ -18,6 +18,27 @@ describe("HostControlGateway", () => {
     await expect(response).resolves.toEqual(["npm:pi-web-access"]);
   });
 
+  it("checks pi package updates with the workspace scope", async () => {
+    const adapter = createInMemoryRuntimeAdapter();
+    const control = new HostControlGateway(adapter);
+    const response = control.checkPiPackageUpdates("ws-1");
+    const sent = adapter.takeSent();
+    expect(sent).toMatchObject({
+      type: "host_request",
+      operation: "check_pi_package_updates",
+      workspaceId: "ws-1",
+    });
+    adapter.receive({
+      type: "host_response",
+      requestId: sent.requestId,
+      operation: "check_pi_package_updates",
+      updates: [{ source: "npm:foo", scope: "global", available: true }],
+    });
+    await expect(response).resolves.toEqual([
+      { source: "npm:foo", scope: "global", available: true },
+    ]);
+  });
+
   it("sends the source with install/remove requests", async () => {
     const adapter = createInMemoryRuntimeAdapter();
     const control = new HostControlGateway(adapter);
@@ -129,6 +150,24 @@ describe("HostControlGateway", () => {
       instanceId: "instance-new",
     });
     await expect(response).resolves.toBe("instance-new");
+  });
+
+  it("resolves a project path to a workspace id", async () => {
+    const adapter = createInMemoryRuntimeAdapter();
+    const control = new HostControlGateway(adapter);
+    const response = control.resolveWorkspace("/tmp/project");
+    const sent = adapter.takeSent();
+    expect(sent).toMatchObject({
+      type: "host_request",
+      operation: "resolve_workspace",
+      projectPath: "/tmp/project",
+    });
+    adapter.receive({
+      type: "host_response",
+      requestId: sent.requestId,
+      workspaceId: "workspace-a",
+    });
+    await expect(response).resolves.toBe("workspace-a");
   });
 
   it("lists installed external apps", async () => {
