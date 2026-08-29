@@ -30,7 +30,12 @@ import {
   resolveProviderId,
   testProviderConnectivity,
 } from "./custom-provider-probe";
+import {
+  createOAuthLoginOperationManager,
+  type OAuthOperationEvent,
+} from "./oauth-login-operations";
 import { buildPackageSkillInventory } from "./package-skill-inventory";
+import { writePasteOffloadFile } from "./paste-offload";
 import {
   buildTelegramDmConfig,
   buildTelegramDoctorReport,
@@ -40,6 +45,7 @@ import {
   type TelegramBotIdentity,
   type TelegramWorkerStatusLike,
 } from "./pi-chat-setup";
+import { createPiOAuthLoginAdapter } from "./pi-oauth-login-adapter";
 import { generateTitleForSession } from "./session-title";
 import {
   buildSkillInventory,
@@ -91,6 +97,10 @@ type CatalogRegistry = {
 
 const MODEL_REGISTRY_REFRESH_TIMEOUT_MS = 2_000;
 
+// One active Codex login per embedded pi process; the in-memory map is the
+// sole operation registry (design §1) — unknown ids resolve to expired.
+const oauthLoginManager = createOAuthLoginOperationManager();
+
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 type ConfigContext = {
@@ -98,10 +108,22 @@ type ConfigContext = {
   cwd?: string;
   model?: unknown;
   sessionManager?: { getSessionFile: () => string | undefined };
+  navigateTree?: (
+    targetId: string,
+    options?: {
+      summarize?: boolean;
+      customInstructions?: string;
+      replaceInstructions?: boolean;
+      label?: string;
+    },
+  ) => Promise<{ cancelled?: boolean } | undefined>;
+  /** Stream an OAuth operation event to the initiating request's envelope. */
+  oauthNotify?: (event: unknown) => void;
   isProjectTrusted?: () => boolean;
 };
 
 type ListedSession = { path?: string };
+type JsonObject = Record<string, unknown>;
 
 async function renameHistoricalSession(filePath: unknown, requestedName: unknown) {
   if (typeof filePath !== "string" || typeof requestedName !== "string") {
@@ -213,6 +235,8 @@ const HOME_DIR = resolveHomeDir();
 const PI_AGENT_ROOT = resolvePiAgentRoot();
 const MODELS_PREFS_PATH = path.join(PI_AGENT_ROOT, "picot-models.json");
 const AGENT_CONFIG_PATH = path.join(PI_AGENT_ROOT, "settings.json");
+const AGENTS_MD_PATH = path.join(PI_AGENT_ROOT, "AGENTS.md");
+const APPEND_SYSTEM_MD_PATH = path.join(PI_AGENT_ROOT, "APPEND_SYSTEM.md");
 const MODELS_CONFIG_PATH = path.join(PI_AGENT_ROOT, "models.json");
 const CHAT_CONFIG_PATH = path.join(PI_AGENT_ROOT, "chat", "config.json");
 const AUTH_CONFIG_PATH = path.join(PI_AGENT_ROOT, "auth.json");
@@ -622,6 +646,31 @@ function writeConfigFile(filePath: string, content: unknown): void {
   fs.writeFileSync(filePath, content, "utf8");
 }
 
+// Plain-text counterpart of readConfigFile/writeConfigFile for agent-root
+// markdown files (AGENTS.md / APPEND_SYSTEM.md). A missing file is not an
+// error — it reads as empty content so the editor starts from a blank file.
+function readTextFile(filePath: string): { content: string; path: string; exists: boolean } {
+  const exists = fs.existsSync(filePath);
+  const content = exists ? fs.readFileSync(filePath, "utf8") : "";
+  return { content, path: filePath, exists };
+}
+
+function writeTextFile(filePath: string, content: unknown): void {
+  if (typeof content !== "string") throw new Error("content must be a string");
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, "utf8");
+}
+
+/**
+ * Copy the current config file to `<path>.bak` before an overwrite, so a bad
+ * save can be rolled back. No-op when the file does not exist yet.
+ */
+function backupConfigFile(configPath: string): void {
+  if (fs.existsSync(configPath)) {
+    fs.copyFileSync(configPath, `${configPath}.bak`);
+  }
+}
+
 async function refreshRegistryBestEffort(registry?: CatalogRegistry): Promise<boolean> {
   if (!registry) return false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -787,9 +836,12 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function readJsonFile(filePath: string): unknown {
+function readJsonFile(filePath: string): JsonObject | undefined {
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const value: unknown = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as JsonObject)
+      : undefined;
   } catch {
     return undefined;
   }
@@ -805,9 +857,7 @@ function getChatWorkerStatuses(): TelegramWorkerStatusLike[] {
   return entries
     .filter((entry) => entry.endsWith(".json"))
     .map((entry) => readJsonFile(path.join(CHAT_WORKER_STATUS_DIR, entry)))
-    .filter((value): value is TelegramWorkerStatusLike =>
-      Boolean(value && typeof value === "object"),
-    );
+    .filter((value): value is JsonObject & TelegramWorkerStatusLike => Boolean(value));
 }
 
 type SuperAgentProject = { name: string; cwd: string; status: string };
@@ -929,6 +979,157 @@ export async function handlePicotConfig(
 
   try {
     switch (op) {
+      case "write_paste_offload": {
+        const content = params.content;
+        if (typeof content !== "string") throw new Error("content is required");
+        if (!ctx.cwd) throw new Error("Active workspace is required");
+        const result = writePasteOffloadFile(ctx.cwd, content);
+        return { ok: true, data: { path: result.relativePath } };
+      }
+      case "get_oauth_login_capabilities": {
+        const runtime = await ModelRuntime.create();
+        const adapter = createPiOAuthLoginAdapter(runtime);
+        const capability = await adapter.getCodexCapability();
+        if (capability.kind !== "supported") {
+          // Unsupported / unavailable providers report an empty list rather
+          // than a synthesized capability (baseline protocol rule).
+          return { ok: true, data: { providers: [] } };
+        }
+        // ModelRuntime.checkAuth returns AuthCheck | undefined; an AuthCheck
+        // means Pi holds a usable credential regardless of method.
+        const configured = Boolean(await runtime.checkAuth("openai-codex"));
+        return {
+          ok: true,
+          data: { providers: [{ providerId: "openai-codex", deviceCode: true, configured }] },
+        };
+      }
+
+      case "start_oauth_login": {
+        const provider = asString(params.provider);
+        const method = asString(params.method);
+        if (provider !== "openai-codex" || method !== "device_code") {
+          throw new Error("Unsupported OAuth provider or method");
+        }
+        if (!ctx.oauthNotify) throw new Error("OAuth event channel is unavailable");
+        const started = oauthLoginManager.start();
+        const emit = (event: OAuthOperationEvent) => ctx.oauthNotify?.(event);
+        // Fire-and-forget: the response resolves immediately with the
+        // operation id; device-code/progress/terminal events stream over the
+        // config notify channel afterwards.
+        void (async () => {
+          const runtime = await ModelRuntime.create();
+          const adapter = createPiOAuthLoginAdapter(runtime);
+          let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+          const clearExpiryTimer = () => {
+            if (expiryTimer) {
+              clearTimeout(expiryTimer);
+              expiryTimer = null;
+            }
+          };
+          try {
+            await adapter.startCodexDeviceCodeLogin(
+              {
+                onDeviceCode: (code) => {
+                  try {
+                    emit(oauthLoginManager.bindDeviceCode(started.operationId, code));
+                    if (code.expiresInSeconds && code.expiresInSeconds > 0) {
+                      clearExpiryTimer();
+                      expiryTimer = setTimeout(() => {
+                        expiryTimer = null;
+                        try {
+                          emit(oauthLoginManager.expire(started.operationId));
+                        } catch {
+                          // Operation already terminal.
+                        }
+                      }, code.expiresInSeconds * 1000);
+                    }
+                  } catch {
+                    // Operation already terminal; nothing to emit.
+                  }
+                },
+                onProgress: (message) => {
+                  try {
+                    emit(oauthLoginManager.bindProgress(started.operationId, message));
+                  } catch {
+                    // Operation already terminal; nothing to emit.
+                  }
+                },
+              },
+              started.signal,
+            );
+            clearExpiryTimer();
+            try {
+              emit(oauthLoginManager.complete(started.operationId));
+              if (registry) await registry.refresh();
+            } catch {
+              // Already removed (cancelled/expired) — nothing to complete.
+            }
+          } catch (error) {
+            clearExpiryTimer();
+            const aborted = (error as Error | null)?.name === "AbortError";
+            try {
+              const event = aborted
+                ? oauthLoginManager.cancel(started.operationId)
+                : oauthLoginManager.fail(started.operationId, error);
+              if (event) emit(event);
+            } catch {
+              // Already terminal; nothing to emit.
+            }
+          }
+        })().catch((error) => {
+          console.warn("[picot-config] OAuth login chain error:", error);
+        });
+        return {
+          ok: true,
+          data: { operationId: started.operationId, provider: "openai-codex", state: "starting" },
+        };
+      }
+
+      case "cancel_oauth_login": {
+        const operationId = asString(params.operationId);
+        if (!operationId) throw new Error("operationId is required");
+        // Unknown ids are a tolerated no-op (map wiped by restart/reload);
+        // the UI treats them as expired per design §5.
+        const cancelled = oauthLoginManager.cancel(operationId);
+        if (cancelled) ctx.oauthNotify?.(cancelled);
+        return { ok: true, data: { operationId } };
+      }
+
+      case "get_oauth_login_status": {
+        const operationId = asString(params.operationId);
+        if (!operationId) throw new Error("operationId is required");
+        return { ok: true, data: oauthLoginManager.getStatus(operationId) };
+      }
+
+      case "oauth_logout": {
+        const provider = asString(params.provider);
+        // Same codex-only whitelist as start_oauth_login (design §3): the
+        // op surface never forwards another provider to runtime.logout().
+        if (provider !== "openai-codex") throw new Error("Unsupported OAuth provider");
+        const runtime = await ModelRuntime.create();
+        await runtime.logout(provider);
+        if (registry) await registry.refresh();
+        return { ok: true, data: { provider } };
+      }
+
+      case "navigate_tree": {
+        const targetId = asString(params.targetId);
+        if (!targetId) throw new Error("targetId is required");
+        if (typeof ctx.navigateTree !== "function") {
+          throw new Error("Session tree navigation is unavailable.");
+        }
+        const result = await ctx.navigateTree(targetId, {
+          summarize: params.summarize === true,
+          ...(typeof params.customInstructions === "string"
+            ? { customInstructions: params.customInstructions }
+            : {}),
+          ...(typeof params.replaceInstructions === "boolean"
+            ? { replaceInstructions: params.replaceInstructions }
+            : {}),
+          ...(typeof params.label === "string" ? { label: params.label } : {}),
+        });
+        return { ok: true, data: result ?? { cancelled: false } };
+      }
       case "rename_historical_session": {
         const result = await renameHistoricalSession(params.filePath, params.name);
         return { ok: true, data: result };
@@ -1034,6 +1235,28 @@ export async function handlePicotConfig(
         return { ok: true, data: { path: AGENT_CONFIG_PATH } };
       }
 
+      // Global agent context / system-prompt append file read/write. AGENTS.md
+      // is injected as global context instructions and APPEND_SYSTEM.md is
+      // appended to the system prompt without replacing it (pi docs "System
+      // Prompt Files"); project-level .pi/ files are workspace files and are
+      // edited through the workspace file browser instead. Markdown is plain
+      // text, so no JSON validation applies.
+      case "read_agents_md":
+        return { ok: true, data: readTextFile(AGENTS_MD_PATH) };
+
+      case "write_agents_md": {
+        writeTextFile(AGENTS_MD_PATH, params.content);
+        return { ok: true, data: { path: AGENTS_MD_PATH } };
+      }
+
+      case "read_append_system_md":
+        return { ok: true, data: readTextFile(APPEND_SYSTEM_MD_PATH) };
+
+      case "write_append_system_md": {
+        writeTextFile(APPEND_SYSTEM_MD_PATH, params.content);
+        return { ok: true, data: { path: APPEND_SYSTEM_MD_PATH } };
+      }
+
       case "get_default_thinking_level":
         return { ok: true, data: getDefaultThinkingLevel(params.scope, ctx) };
 
@@ -1062,6 +1285,9 @@ export async function handlePicotConfig(
         ) {
           throw new Error("'providers' must be an object");
         }
+        // Keep a safety copy of the previous models.json so a bad save can be
+        // rolled back; the frontend can restore it if the new content breaks.
+        backupConfigFile(MODELS_CONFIG_PATH);
         writeConfigFile(MODELS_CONFIG_PATH, content);
         const refreshed = await refreshRegistryBestEffort(registry);
         return { ok: true, data: { path: MODELS_CONFIG_PATH, refreshed } };

@@ -4,6 +4,7 @@
 import { createFileTypeIcon } from "./file-type-icons.js";
 import { t } from "./i18n.js";
 import { createIcon, setButtonIcon } from "./icons.js";
+import { bindDialogEscape } from "./ui/dialog-escape.js";
 
 function createSectionChevron() {
   const chevron = document.createElement("span");
@@ -39,6 +40,8 @@ export class GitPanel {
     this.onStatus = onStatus;
     this.fileList = fileList;
     this.snapshot = null;
+    this.notGitRepo = false;
+    this.pendingStatusRequestId = null;
     this.folded = new Set();
     this.selected = new Set();
     this.aiSnapshot = null;
@@ -52,6 +55,8 @@ export class GitPanel {
   }
   setSnapshot(snapshot) {
     this.snapshot = snapshot;
+    this.notGitRepo = false;
+    this.pendingStatusRequestId = null;
     const valid = new Set(
       (snapshot?.entries || []).flatMap((entry) =>
         this.groupsFor(entry).map(
@@ -70,9 +75,21 @@ export class GitPanel {
     this.render();
     this.onStatus?.(snapshot);
   }
+  setNotGitRepo(value = true) {
+    this.notGitRepo = value;
+    this.pendingStatusRequestId = null;
+    this.render();
+  }
+  /** True only for the failure of the most recent status probe, so stale or
+   *  concurrent non-status failures (diff/write/commit) cannot flip the panel
+   *  into the not-a-repository state. */
+  isStatusFailure(requestId) {
+    return requestId != null && requestId === this.pendingStatusRequestId;
+  }
   async refresh() {
     const id = this.client?.command({ type: "status" });
     if (!id) return null;
+    this.pendingStatusRequestId = id;
     return id;
   }
   async discard(entries = [], contextGroup = null) {
@@ -98,18 +115,10 @@ export class GitPanel {
       const cancel = document.createElement("button");
       cancel.type = "button";
       cancel.textContent = t("git.cancel");
-      cancel.addEventListener("click", () => {
-        overlay.remove();
-        resolve(false);
-      });
       const confirm = document.createElement("button");
       confirm.type = "button";
       confirm.textContent = t("git.discard");
       confirm.className = "git-confirm-discard";
-      confirm.addEventListener("click", () => {
-        overlay.remove();
-        resolve(true);
-      });
       actions.append(cancel, confirm);
       dialog.append(actions);
       overlay.append(dialog);
@@ -117,6 +126,15 @@ export class GitPanel {
         // Modal: do not close on overlay click. The user must explicitly
         // cancel or confirm.
       });
+      let unbindEscape = () => {};
+      const finish = (result) => {
+        unbindEscape();
+        overlay.remove();
+        resolve(result);
+      };
+      unbindEscape = bindDialogEscape(() => finish(false));
+      cancel.addEventListener("click", () => finish(false));
+      confirm.addEventListener("click", () => finish(true));
       document.body.append(overlay);
       confirm.focus();
     });
@@ -227,12 +245,18 @@ export class GitPanel {
       // must explicitly cancel or submit.
     });
     document.body.append(overlay);
-    this.commitDialog = { overlay, textarea, submit };
+    this.commitDialog = {
+      overlay,
+      textarea,
+      submit,
+      unbindEscape: bindDialogEscape(() => this.closeCommitDialog()),
+    };
     textarea.focus();
     this.updateCommitDialogState();
   }
   closeCommitDialog() {
     if (!this.commitDialog) return;
+    this.commitDialog.unbindEscape?.();
     this.commitDialog.overlay.remove();
     this.commitDialog = null;
   }
@@ -321,6 +345,12 @@ export class GitPanel {
     const scrollTop = this.container.scrollTop;
     this.container.replaceChildren();
     const snapshot = this.snapshot;
+    if (this.notGitRepo) {
+      const empty = document.createElement("p");
+      empty.textContent = t("git.notGitRepo");
+      this.container.append(empty);
+      return;
+    }
     if (!snapshot) {
       const empty = document.createElement("p");
       empty.textContent = t("git.noStatus");
@@ -445,13 +475,6 @@ export class GitPanel {
     const actions = document.createElement("div");
     actions.className = "git-panel-toolbar-actions";
     actions.append(
-      createToolbarIconButton({
-        className: "git-panel-refresh",
-        icon: "refresh-cw",
-        label: t("git.refresh"),
-        variant: "ui-icon-button--ghost",
-        onClick: () => void this.refresh(),
-      }),
       createToolbarIconButton({
         className: "git-panel-commit",
         icon: "sparkles",

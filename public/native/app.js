@@ -27,6 +27,7 @@ import { setupResizablePanel } from "../ui/resizable-panel.js";
 import { ToolCardRenderer } from "../ui/tool-card.js";
 import { setupComposerAutoResize } from "./composer/composer-autoresize.js";
 import { setupComposerImageAttachments } from "./composer/composer-images.js";
+import { setupComposerPasteOffload } from "./composer/composer-paste-offload.js";
 import { setupComposerSlashMenu } from "./composer/composer-slash-menu.js";
 import { setupComposerSubmitHandling } from "./composer/composer-submit.js";
 import { renderQueuedMessages } from "./composer/queued-messages.js";
@@ -48,13 +49,15 @@ import {
   RpivTodoMirrorPanel,
 } from "./features/rpiv-todo-mirror.js";
 import { setupTerminalPanel } from "./features/terminal-panel-integration.js";
+import { renderTurnFileChips } from "./features/turn-file-chips.js";
 import { createNotificationCenter } from "./notifications/notification-center.js";
 import {
   createNativeTaskNotificationSender,
   createTaskCompletionNotifications,
 } from "./notifications/task-completion-notifications.js";
 import { extractAssistantError, extractRuntimeEventError } from "./session/assistant-error.js";
-import { setupSessionInfo } from "./session/session-info.js";
+import { InfoPanel } from "./session/info-panel.js";
+import { activeSession, setupSessionInfo } from "./session/session-info.js";
 import { createSessionSelectionHandler } from "./session/session-navigation.js";
 import { setupSessionSearchDialog } from "./session/session-search-dialog.js";
 import { SessionSidebar } from "./session/session-sidebar.js";
@@ -68,14 +71,19 @@ import {
 } from "./transport/config-gateway-readiness.js";
 import { HostControlGateway } from "./transport/control-gateway.js";
 import { HostDataGateway } from "./transport/data-gateway.js";
+import { createOauthGateway } from "./transport/oauth-gateway.js";
 import { HostRuntimeAdapter, resolveHostWebSocketUrl } from "./transport/runtime-adapter.js";
 import { routeRuntimeFrame } from "./transport/runtime-frame-routing.js";
 import { RuntimeGateway } from "./transport/runtime-gateway.js";
 import { setupAppKeyboardShortcuts } from "./utils/keyboard-shortcuts.js";
 import { randomId, sessionScopedClientId } from "./utils/random-id.js";
 import { appRoutePath, parseAppRoute, replaceTemporarySessionRoute } from "./utils/router.js";
+import { createWorkspaceAppActions } from "./workspace/app-actions.js";
 import { findLatestAssistantUsage, setupContextUsage } from "./workspace/context-usage.js";
-import { toggleExclusiveSideView } from "./workspace/exclusive-side-panel.js";
+import {
+  toggleExclusiveSidePanel,
+  toggleExclusiveSideView,
+} from "./workspace/exclusive-side-panel.js";
 import { NativeFileBrowser } from "./workspace/file-browser.js";
 import { setupHeaderOpenApp } from "./workspace/header-open-app.js";
 import { setupProjectHeader } from "./workspace/project-header.js";
@@ -114,6 +122,14 @@ const convNav = new ConvNav({
   messagesEl: messagesElement,
   headerEl: headerElement,
   badgeEl: scrollBottomBadge,
+  // v3 parity: jumping the chat to a turn highlights and scrolls the Info
+  // panel's session-history node for the same entry (panel-hidden latch is
+  // handled inside the panel).
+  onJumpToEntry: (entryId) => {
+    if (!infoPanel) return;
+    infoPanel.selectEntry(entryId);
+    infoPanel.scrollToSelectedEntry();
+  },
 });
 const notifications = createNotificationCenter();
 const sendNativeTaskNotification = createNativeTaskNotificationSender({
@@ -138,7 +154,7 @@ setupMessagesInsets({
   inputArea: document.querySelector(".input-area"),
   workspaceContent: document.querySelector(".workspace-content"),
 });
-const messageRenderer = new MessageRenderer(messagesElement);
+const messageRenderer = new MessageRenderer(messagesElement, { sessionTreeActions: true });
 const toolRenderer = new ToolCardRenderer(messagesElement);
 const input = document.getElementById("message-input");
 const form = document.getElementById("chat-form");
@@ -263,6 +279,14 @@ const sessionInfo = setupSessionInfo({
   getTarget: () => target,
   getSessions: () => sidebar?.sessions ?? [],
 });
+function syncSessionInfo() {
+  sessionInfo.refresh();
+  const { id, session } = activeSession(
+    () => target,
+    () => sidebar?.sessions ?? [],
+  );
+  infoPanel?.updateSessionInfo({ filePath: session?.filePath || "", sessionId: id });
+}
 let activeSearchQuery = "";
 // Auto-launch guard. Stored in sessionStorage (not a module variable) so it
 // survives same-window `window.navigate()` reloads: when the user selects
@@ -327,6 +351,9 @@ const config = new ConfigGateway({
   getTarget: () => target,
   waitUntilReady: () => (configGatewayTargetReady ? Promise.resolve() : configGatewayReady),
 });
+// OAuth login flows share the config transport; their __picotOauth frames
+// must be consumed before the config gateway sees them (design §5 M3).
+const oauthGateway = createOauthGateway({ runtime, getTarget: () => target });
 window.__picotConfigCall = (op, params, options) => config.call(op, params, options);
 const customUiPanel = new CustomUiPanel({
   runtime,
@@ -340,6 +367,9 @@ const extensionWidgets = new ExtensionWidgets({
 const contextUsage = setupContextUsage();
 const compactContextButton = document.getElementById("compact-context-btn");
 const filePreviewPanel = setupFilePreviewPanel();
+// Written-file paths collected during the current turn (via the preview
+// follow's onWriteApplied signal); rendered as chips when the turn settles.
+let turnWrittenPaths = [];
 const filePreviewFollow = createFilePreviewFollow({
   panel: filePreviewPanel,
   getWorkspacePath: async () => {
@@ -350,6 +380,9 @@ const filePreviewFollow = createFilePreviewFollow({
       return "";
     }
   },
+  onWriteApplied: (_rawPath, previewPath) => {
+    if (!turnWrittenPaths.includes(previewPath)) turnWrittenPaths.push(previewPath);
+  },
 });
 const gitPanel = setupGitPanel({
   runtime,
@@ -359,6 +392,92 @@ const gitPanel = setupGitPanel({
   fileList: document.getElementById("file-list"),
   filePreviewPanel,
   onError: showError,
+});
+
+// ── Info panel (session tree + workspace actions) ─────────────────────
+const infoSidebar = document.getElementById("info-sidebar");
+const infoAppActions = createWorkspaceAppActions({
+  control,
+  getWorkspacePath: () => infoPanel?.workspacePath || "",
+});
+const infoPanel = infoSidebar
+  ? new InfoPanel({
+      panel: document.getElementById("info-panel"),
+      actions: infoAppActions,
+      t,
+      onNavigateLeaf: (entryId) => navigateActiveTree(entryId),
+      isStreaming: () => store.lifecycle === "working",
+    })
+  : null;
+
+let infoTreeSeq = 0;
+async function refreshInfoPanel({ refreshWorkspace = false } = {}) {
+  if (!infoPanel || !infoSidebar || infoSidebar.classList.contains("collapsed")) return;
+  // Sequence guard: a session switch while a fetch is in flight must not let
+  // the stale response repaint the new session's tree.
+  const seq = ++infoTreeSeq;
+  if (refreshWorkspace) {
+    try {
+      const response = await data.workspaceInfo(target.workspaceId);
+      infoPanel.updateWorkspace(response?.info?.path ?? "");
+    } catch {
+      // Workspace path stays at the last known value; the tree still loads.
+    }
+  }
+  syncSessionInfo();
+  try {
+    // Pi owns active leaf state. Prefer its live get_entries snapshot over the
+    // disk fallback so Resume reflects branch navigation immediately.
+    const runtimeResponse = await runtime.request({ type: "get_entries" }, target);
+    const tree = runtimeResponse?.response?.data;
+    if (Array.isArray(tree?.entries)) {
+      if (seq !== infoTreeSeq) return;
+      infoPanel.updateTree({ entries: tree.entries, leafId: tree.leafId ?? null });
+      return;
+    }
+    throw new Error("Runtime get_entries returned no entries");
+  } catch (runtimeError) {
+    try {
+      const response = await data.readSessionTree(target.workspaceId, target.sessionId);
+      if (seq !== infoTreeSeq) return;
+      infoPanel.updateTree({
+        entries: response?.tree?.entries ?? [],
+        leafId: response?.tree?.leafId ?? null,
+      });
+    } catch (error) {
+      console.warn("[InfoPanel] tree refresh failed:", runtimeError, error);
+    }
+  }
+}
+
+async function navigateActiveTree(entryId) {
+  if (!entryId || store.lifecycle === "working") return;
+  const result = await config.call("navigate_tree", {
+    targetId: entryId,
+    summarize: false,
+    label: t("infoPanel.resumeBranch"),
+  });
+  if (!result?.ok) throw new Error(result?.error || "Session tree navigation failed");
+  await hydrateSnapshotOnce();
+  if (infoSidebar && !infoSidebar.classList.contains("collapsed")) {
+    await refreshInfoPanel();
+  }
+}
+
+function openInfoPanel() {
+  const opened = toggleExclusiveSidePanel(infoSidebar, [
+    document.getElementById("file-sidebar"),
+    document.getElementById("diff-sidebar"),
+  ]);
+  if (opened) void refreshInfoPanel({ refreshWorkspace: true });
+}
+
+document.getElementById("info-sidebar-toggle")?.addEventListener("click", openInfoPanel);
+document.getElementById("info-sidebar-close")?.addEventListener("click", () => {
+  infoSidebar?.classList.add("collapsed");
+});
+document.getElementById("info-sidebar-refresh")?.addEventListener("click", () => {
+  void refreshInfoPanel({ refreshWorkspace: true });
 });
 
 // Owned by setupFileBrowser() once the sidebar DOM is ready. Kept at module
@@ -372,7 +491,9 @@ let fileBrowser = null;
 function openWorkspacePanel(view) {
   const sidebar = document.getElementById("file-sidebar");
   const result = toggleExclusiveSideView(sidebar, {
-    otherPanels: [document.getElementById("diff-sidebar")],
+    // Files / Git / Info are one exclusive group: opening any view collapses
+    // BOTH other side panels (Info shares the right rail, not a tab bar).
+    otherPanels: [document.getElementById("diff-sidebar"), infoSidebar],
     currentView: gitPanel?.getTab?.() ?? "files",
     nextView: view,
   });
@@ -692,7 +813,12 @@ runtime.subscribe((frame) => {
     frame,
     target,
     store,
-    consumeConfigResponse: (candidate) => consumeConfigResponseFrame(config, candidate),
+    consumeConfigResponse: (candidate) => {
+      // M3 mutual exclusion: OAuth envelopes are consumed first and never
+      // reach the config gateway or chat rendering.
+      if (oauthGateway.consumeFrame(candidate)) return true;
+      return consumeConfigResponseFrame(config, candidate);
+    },
     reduceForeground: reduceSessionState,
   });
   if (routed.kind === "background" || routed.kind === "consumed-background") {
@@ -745,6 +871,18 @@ if (atFileMentionMenu) {
     },
   });
 }
+const pasteOffload = setupComposerPasteOffload({
+  textarea: input,
+  container: document.getElementById("composer-card"),
+  offload: async (content) => {
+    const result = await config.call("write_paste_offload", { content });
+    if (!result?.ok || typeof result.data?.path !== "string") {
+      throw new Error(result?.error || "Paste offload failed");
+    }
+    return result.data.path;
+  },
+  t,
+});
 setupComposerSubmitHandling({
   input,
   form,
@@ -771,6 +909,28 @@ messagesElement.addEventListener("messagefork", async (event) => {
     }
   } catch (error) {
     showError(error);
+  }
+});
+messagesElement.addEventListener("messageedit", async (event) => {
+  const { entryId, text } = event.detail || {};
+  if (!entryId) return;
+  if (store.lifecycle === "working") {
+    showError(new Error(t("infoPanel.actionWhileStreaming")));
+    return;
+  }
+  try {
+    // Same Pi bridge navigate as the Info panel Resume: leaf moves to the
+    // user entry, then the original prompt is prefilled for a new branch.
+    await navigateActiveTree(entryId);
+    if (typeof text === "string" && text) {
+      input.value = text;
+      composerAutoResize.sync();
+      input.focus();
+    }
+  } catch (error) {
+    showError(
+      new Error(t("errors.treeNavigateFailed", { error: String(error?.message ?? error) })),
+    );
   }
 });
 document.getElementById("refresh-sessions-btn")?.addEventListener("click", (e) => {
@@ -843,6 +1003,7 @@ const settingsPanel = setupSettingsPanel({
   control,
   getWorkspaceId: () => target.workspaceId,
   configGateway: config,
+  oauthGateway,
   onModelConfigurationChanged: () => loadAvailableModels(),
   runtime,
   getTarget: () => target,
@@ -852,6 +1013,7 @@ const settingsPanel = setupSettingsPanel({
   onThinkingLevelChanged: (level, changedTarget) => {
     if (changedTarget?.sessionId === target.sessionId) updateComposerThinking(level);
   },
+  desktopClient: remoteAuth.clientType === "desktop",
 });
 setupAppUpdater({ settingsPanel });
 setupNewSessionButton({ workspaceId: target.workspaceId, onError: showError });
@@ -1267,7 +1429,7 @@ async function openSessionInProject(session) {
 }
 
 function subscribeToLiveSessions(sessions) {
-  sessionInfo.refresh();
+  syncSessionInfo();
   for (const session of sessions ?? []) {
     const liveTarget = session?.target;
     if (liveTarget?.workspaceId && liveTarget?.sessionId && liveTarget?.instanceId) {
@@ -1577,6 +1739,9 @@ function setupFileBrowser() {
   const upBtn = document.getElementById("file-sidebar-up");
   if (upBtn) upBtn.disabled = true; // disabled until we've navigated into a subdir
 
+  const refreshBtn = document.getElementById("file-sidebar-refresh");
+  const toggleHiddenBtn = document.getElementById("file-sidebar-toggle-hidden");
+
   fileBrowser = new NativeFileBrowser(fileList, pathEl, data, target.workspaceId, {
     showViewSwitch: false,
     onFileOpen(entry) {
@@ -1601,6 +1766,14 @@ function setupFileBrowser() {
       // Enable the up button only when we're inside a subdirectory.
       if (upBtn) upBtn.disabled = path === "";
     },
+    onShowHiddenChange(showHidden) {
+      toggleHiddenBtn?.setAttribute("aria-pressed", String(showHidden));
+    },
+  });
+
+  refreshBtn?.addEventListener("click", () => fileBrowser?.refresh()?.catch(showError));
+  toggleHiddenBtn?.addEventListener("click", () => {
+    fileBrowser?.setShowHidden(!fileBrowser.showHidden)?.catch(showError);
   });
 
   document.getElementById("file-sidebar-finder")?.addEventListener("click", async () => {
@@ -1641,6 +1814,7 @@ function setupFileBrowser() {
 }
 
 async function sendComposerInput({ altKey }) {
+  if (pasteOffload?.isBusy()) return;
   const value = input.value;
   const images = imageAttachments.getImages();
   if (!value.trim() && images.length === 0) return;
@@ -1678,6 +1852,23 @@ function runBuiltin(action) {
   }
 }
 
+/** Mount this turn's written-file chips under the final assistant message. */
+function mountTurnFileChips() {
+  if (!messagesElement || turnWrittenPaths.length === 0) return;
+  const writes = turnWrittenPaths.map((filePath) => ({ filePath }));
+  turnWrittenPaths = [];
+  const row = renderTurnFileChips(writes);
+  if (!row) return;
+  // Chip clicks bubble a previewfile event to the #messages listener, which
+  // routes through filePreviewFollow.openPath like tool-card references.
+  const lastAssistant = [...messagesElement.querySelectorAll(".message.assistant")].pop();
+  if (lastAssistant && lastAssistant.parentElement === messagesElement) {
+    lastAssistant.insertAdjacentElement("afterend", row);
+    return;
+  }
+  messagesElement.appendChild(row);
+}
+
 async function handleRuntimeEvent(event) {
   switch (event.type) {
     case "agent_start":
@@ -1685,6 +1876,7 @@ async function handleRuntimeEvent(event) {
       setStatus("working");
       contextUsage.setWorking(true);
       sidebar?.setStreaming(target.sessionId, true);
+      turnWrittenPaths = [];
       break;
     case "agent_settled":
     case "agent_end":
@@ -1743,6 +1935,15 @@ async function handleRuntimeEvent(event) {
           convNav.notifyNewMessage();
         }
         showProviderErrorIfNeeded(event);
+        if (infoSidebar && !infoSidebar.classList.contains("collapsed")) {
+          void refreshInfoPanel();
+        }
+      } else if (event.message?.role === "user") {
+        // The persisted user turn is a new tree node; refresh the open Info
+        // panel so it appears before the assistant reply finishes.
+        if (infoSidebar && !infoSidebar.classList.contains("collapsed")) {
+          void refreshInfoPanel();
+        }
       }
       break;
     case "tool_execution_start":
@@ -1836,8 +2037,26 @@ async function adoptTarget(nextTarget, { updateRoute = true } = {}) {
   // sidebar.load() at startup runs before the workspace is resolved.
   if (nextTarget.workspaceId !== previousTarget.workspaceId) {
     sidebar?.load().catch(showError);
+    // Header pills must follow the workspace, not the git panel: re-probe on
+    // every workspace entry so a non-Git workspace hides the git pill without
+    // opening the panel, and switching back un-hides it (v3 49564e0).
+    setupProjectHeader({
+      data,
+      workspaceId: nextTarget.workspaceId,
+    }).catch((error) => {
+      console.warn("[Native] Failed to load project header info:", error);
+    });
   }
-  sessionInfo.refresh();
+  // The Info panel's tree belongs to the active session: bump the sequence
+  // (dropping any in-flight fetch for the old session) and reload if open.
+  infoTreeSeq += 1;
+  infoPanel?.updateTree({ entries: [], leafId: null });
+  if (infoSidebar && !infoSidebar.classList.contains("collapsed")) {
+    void refreshInfoPanel({
+      refreshWorkspace: nextTarget.workspaceId !== previousTarget.workspaceId,
+    });
+  }
+  syncSessionInfo();
   headerStatusBar?.reset?.();
   // Re-hydrate the aggregate stats for the new session.
   hydrateHeaderSessionStats();
@@ -2004,7 +2223,12 @@ function renderHistory(messages) {
           const leadingText = processBlocks.filter((b) => b.type === "text");
           if (leadingText.length > 0) {
             messageRenderer.renderAssistantMessage(
-              { content: leadingText, usage: message.usage },
+              {
+                content: leadingText,
+                usage: message.usage,
+                timestamp: message.timestamp,
+                entryId: message.entryId,
+              },
               false,
               true,
             );
@@ -2042,7 +2266,12 @@ function renderHistory(messages) {
         }
         if (answerBlocks.length > 0) {
           messageRenderer.renderAssistantMessage(
-            { content: answerBlocks, usage: message.usage },
+            {
+              content: answerBlocks,
+              usage: message.usage,
+              timestamp: message.timestamp,
+              entryId: message.entryId,
+            },
             false,
             true,
           );
@@ -2199,6 +2428,7 @@ function settleForegroundAgent(event) {
   sidebar?.setStreaming(target.sessionId, false);
   hideLiveProcessIndicator();
   collapseCompletedTurn({ markDone: true });
+  mountTurnFileChips();
   showProviderErrorIfNeeded(event);
 }
 
@@ -2318,7 +2548,10 @@ function renderEmptyModelDropdown(container) {
   settingsButton.textContent = t("migrated.native.app.textcontent.openSettings");
   settingsButton.addEventListener("click", () => {
     closeModelDropdown();
-    settingsPanel?.openSettings("configuration");
+    // Provider credentials / models.json live on the Models tab since the
+    // settings split; Advanced Configuration is the agent settings.json
+    // editor and would land the user on the wrong page.
+    settingsPanel?.openSettings("models");
   });
 
   empty.append(title, message, settingsButton);

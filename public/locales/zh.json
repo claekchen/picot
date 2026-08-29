@@ -45,6 +45,7 @@
     "conflicted": "冲突",
     "refresh": "刷新 Git 状态",
     "noStatus": "尚未加载 Git 状态",
+    "notGitRepo": "当前工作区不是 Git 仓库",
     "discardWarning": "此操作不可撤销",
     "writeUnavailable": "Git 写入授权不可用",
     "stage": "暂存",
@@ -84,9 +85,9 @@
     "contextTitle": "上下文用量",
     "costSub": "{amount}（订阅）",
     "sessionUsageTitle": "会话令牌（输入 / 输出 / 缓存）",
-    "summary": "入 {in} · 出 {out} · 缓存 {cache}",
-    "inputSummary": "入 {in}",
-    "outputSummary": "出 {out}",
+    "summary": "↓ {in} · ↑ {out} · 缓存 {cache}",
+    "inputSummary": "↓ {in}",
+    "outputSummary": "↑ {out}",
     "cache": "CACHE",
     "costTitle": "Session cost",
     "input": "IN",
@@ -115,7 +116,7 @@
   "models": {
     "searchPlaceholder": "搜索模型…",
     "emptyTitle": "无可用模型",
-    "emptyHelp": "未配置 API 密钥。请在设置 → 提供商中设置密钥。",
+    "emptyHelp": "未配置 API 密钥。请在设置 → 模型 中设置密钥。",
     "openSettings": "打开设置"
   },
   "queue": {
@@ -144,7 +145,11 @@
     "expandAllToolsDesc": "展开所有工具卡片",
     "collapseAllTools": "折叠所有工具",
     "collapseAllToolsDesc": "折叠所有工具卡片",
-    "compacting": "压缩中…"
+    "compacting": "压缩中…",
+    "pasteDetected": "检测到大段粘贴（{size}）— 转存为文件？",
+    "pasteAsFile": "转存为文件",
+    "keepInline": "保留原文",
+    "pasteOffloadFailed": "粘贴内容保存失败"
   },
   "messages": {
     "attachedImage": "附加图片",
@@ -152,13 +157,18 @@
     "thinking": "思考中",
     "copy": "复制",
     "copied": "已复制！",
+    "forkSession": "复制会话",
+    "editMessage": "编辑消息",
+    "expand": "展开",
+    "collapse": "收起",
     "scrollToBottom": "滚动到最新消息",
     "processDetails": "处理详情",
     "processStep": "{count} 个步骤",
     "processSteps": "{count} 个步骤",
     "processToolCall": "{count} 次工具调用",
     "processToolCalls": "{count} 次工具调用",
-    "providerError": "模型请求失败。"
+    "providerError": "模型请求失败。",
+    "turnFiles": "本轮修改的文件（{count}）："
   },
   "tools": {
     "copyOutput": "复制输出",
@@ -174,6 +184,10 @@
     "empty": "空目录",
     "failedLoad": "加载失败",
     "parentDirectory": "上级目录",
+    "refreshDirectory": "刷新目录",
+    "refreshDirectoryAria": "刷新当前目录列表",
+    "showHiddenFiles": "显示隐藏文件",
+    "showHiddenFilesAria": "显示或隐藏点文件及被忽略目录",
     "openInFileManager": "在文件管理器中打开",
     "close": "关闭文件浏览器",
     "preview": {
@@ -248,6 +262,9 @@
     "submit": "提交",
     "save": "保存"
   },
+  "header": {
+    "extensionUpdatesAvailable": "扩展有可用更新"
+  },
   "extensions": {
     "loadingPackages": "正在加载包...",
     "failedToLoadPackages": "加载包失败",
@@ -292,6 +309,13 @@
     "cwd": "工作目录",
     "resolvedResources": "已解析的资源",
     "update": "更新",
+    "checkingUpdates": "正在检查版本更新…",
+    "updateAvailable": "有可用更新",
+    "updateAll": "全部更新（{count}）",
+    "updatingAll": "正在更新扩展 {done}/{total}…",
+    "updatedAll": "已更新 {count} 个扩展。",
+    "updatedAllWithFailures": "已更新 {count} 个扩展，{failed} 个失败。",
+    "checkUpdatesFailed": "检查更新失败；在检查成功之前按钮保持禁用。",
     "updateTip": "将扩展包更新到最新版本",
     "updateMessage": "已更新 {source}。",
     "remove": "移除",
@@ -320,7 +344,8 @@
     "insertExample": "插入示例",
     "remove": "移除",
     "delete": "删除",
-    "openLink": "打开链接"
+    "openLink": "打开链接",
+    "close": "关闭"
   },
   "status": {
     "saving": "保存中...",
@@ -357,6 +382,7 @@
     "compactedWithSummary": "✓ 上下文已压缩 — {summary}"
   },
   "errors": {
+    "treeNavigateFailed": "分支切换失败:{error}",
     "newSessionOnlyNative": "仅原生主机支持新建会话。",
     "newSessionPathUnavailable": "启动新会话失败：当前工作区路径不可用",
     "newSessionNavUnavailable": "启动新会话失败：导航不可用",
@@ -486,6 +512,8 @@
     "pinWorkspace": "固定工作区",
     "unpinWorkspace": "取消固定工作区",
     "archiveWorkspaceSessions": "归档会话",
+    "deleteWorkspaceSessions": "删除全部会话",
+    "deleteWorkspaceConfirm": "永久删除 {count} 个会话？此操作无法撤销。",
     "openInFinder": "在访达中打开",
     "workspaceActions": "工作区操作",
     "sessionCountTotal": "{count} 个会话",
@@ -586,7 +614,7 @@
     "general": "通用",
     "extensions": "扩展",
     "usage": "使用量",
-    "configuration": "提供商",
+    "configuration": "高级配置",
     "remoteAccess": "远程访问",
     "remoteAccessHelp": "在同一网络的设备上打开或扫描此启动器 URL。点击请求访问，然后在桌面 Picot 中批准。",
     "remoteAccessUrl": "局域网启动器 URL",
@@ -621,6 +649,14 @@
     "protection": "保护",
     "requireLogin": "需要登录",
     "agentConfigFile": "智能体配置文件",
+    "agentsMd": "AGENTS.md",
+    "agentsContextFile": "智能体上下文",
+    "agentsMdHelp": "写给智能体的工作说明（偏好、约定、常用命令）。可选。此处改的是全局文件，对所有项目生效；某个仓库自己的规则请写在该仓库的 AGENTS.md。",
+    "agentsMdPlaceholder": "例如：回答用中文。改代码前先读相关文件。",
+    "appendSystemMd": "APPEND_SYSTEM.md",
+    "appendSystemPromptFile": "追加系统提示",
+    "appendSystemMdHelp": "追加到系统提示末尾，不替换 Pi 默认提示。适合写始终要遵守的行为规则。可选。留空则只用默认行为。",
+    "appendSystemMdPlaceholder": "例如：回答尽量简短。执行有风险的操作前先说明。",
     "providersFile": "提供者文件",
     "llmProviders": "LLM 提供者",
     "browseCommunityPackages": "浏览社区包",
@@ -659,12 +695,29 @@
       "configured": "已配置"
     },
     "models": {
+      "title": "模型",
       "helpPre": "编辑",
       "helpPost1": "以添加自定义提供者（Ollama、vLLM、LM Studio、OpenAI 兼容代理、OpenRouter 路由覆盖等）。参见",
       "docsLink": "models.json 文档",
       "helpPost2": "了解完整架构。更改即时生效 — 无需重启。",
       "replaceConfirm": "用 Ollama 示例替换当前内容？",
-      "docsOpenFailed": "无法打开文档链接"
+      "docsOpenFailed": "无法打开文档链接",
+      "oauth": {
+        "signInWithChatGPT": "使用 ChatGPT 登录",
+        "preparing": "正在准备 ChatGPT 登录…",
+        "completeInBrowser": "请在浏览器中完成授权以继续。",
+        "openBrowser": "打开浏览器",
+        "copyCode": "复制代码",
+        "cancel": "取消",
+        "connected": "ChatGPT 已连接。",
+        "logout": "退出登录",
+        "logoutConfirm": "退出 ChatGPT 登录？这将移除已保存的登录凭据。",
+        "cancelled": "ChatGPT 登录已取消。",
+        "expired": "此设备代码已过期，请重新开始。",
+        "failed": "ChatGPT 登录失败。",
+        "tlsUntrusted": "TLS 证书校验失败。本地 HTTPS 代理（Clash / Surge / VPN）很可能在拦截 OpenAI 请求。请信任该代理的 CA，或对 OpenAI 关闭 HTTPS 解密后再重试。",
+        "retry": "重试"
+      }
     },
     "providerPicker": {
       "builtIn": "内置",
@@ -1146,5 +1199,27 @@
     "deny": "拒绝",
     "approve": "批准",
     "error": "无法处理该请求。它可能已经被处理。"
+  },
+  "infoPanel": {
+    "title": "信息",
+    "workspace": "工作区",
+    "copyPath": "复制路径",
+    "copied": "已复制",
+    "sessionHistory": "会话历史",
+    "activePath": "当前分支",
+    "branch": "分支",
+    "turns": "{count} 轮",
+    "resumeBranch": "恢复分支",
+    "resumeStreamingBlocked": "生成回复时无法恢复分支",
+    "actionWhileStreaming": "请等待当前回复完成",
+    "refresh": "刷新会话历史",
+    "empty": "暂无消息",
+    "statusError": "出错",
+    "statusAborted": "已中止",
+    "imageMessage": "图片",
+    "roleUser": "你",
+    "roleAssistant": "助手",
+    "toggleAria": "切换会话信息面板",
+    "closeAria": "关闭会话信息面板"
   }
 }

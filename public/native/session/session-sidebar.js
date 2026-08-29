@@ -3,6 +3,7 @@ import { createIcon } from "../../icons.js";
 import { buildSidebarSection, buildSidebarWorkspaceGroup } from "../../sidebar-workspace-group.js";
 import { isSuperAgentProjectPath } from "../../super-agent/session.js";
 import { isSuperAgentEnabled } from "../../super-agent/settings.js";
+import { bindDialogEscape } from "../../ui/dialog-escape.js";
 import { createLoadingPlaceholder } from "../../ui/loading-placeholder.js";
 import { basenameLocalPath } from "../../workspace/path-utils.js";
 import { randomId } from "../utils/random-id.js";
@@ -360,6 +361,47 @@ export class SessionSidebar {
   // Permanently deletes every archived session from disk (after a confirm
   // dialog) and drops the successfully-deleted ids from local state + the
   // in-memory session list.
+  // Deletes every deletable session of one workspace in a single confirmed
+  // batch. Sessions that are currently streaming (running) or active stay —
+  // the runtime owns their lifecycle. Mirrors deleteAllArchived's response
+  // handling: only ids the backend confirms as deleted are dropped locally.
+  // Ids derive from this.sessions by project.path (like archiveProject) so
+  // both menu call sites work: project groups pass a project with .sessions,
+  // pinned-workspace groups pass only { path, name }.
+  async deleteWorkspaceSessions(project) {
+    if (!this.control) return;
+    const deletable = this.sessions
+      .filter(
+        (session) =>
+          session.projectPath === project?.path && !isSuperAgentProjectPath(session.projectPath),
+      )
+      .map((session) => session.id)
+      .filter(
+        (id) =>
+          typeof id === "string" && id && id !== this.activeSessionId && !this.streaming.has(id),
+      );
+    if (deletable.length === 0) return;
+    const ok = await this.#confirmDialog({
+      message: t("sidebar.deleteWorkspaceConfirm", { count: deletable.length }),
+      ariaLabel: t("sidebar.deleteWorkspaceSessions"),
+    });
+    if (!ok) return;
+    try {
+      const { deleted } = await this.control.deleteSessions(deletable);
+      const deletedSet = new Set(deleted || []);
+      if (deletedSet.size === 0) return;
+      for (const id of deletable) {
+        if (deletedSet.has(id)) this.pinnedStore?.unpinSession(id);
+      }
+      this.archived = this.archived.filter((id) => !deletedSet.has(id));
+      this.#save(STORAGE.archived, this.archived);
+      this.sessions = this.sessions.filter((session) => !deletedSet.has(session.id));
+      this.render();
+    } catch (error) {
+      console.error("[Sidebar] deleteWorkspaceSessions failed:", error);
+    }
+  }
+
   async deleteAllArchived() {
     const ids = [...this.archived];
     if (ids.length === 0 || !this.control) return;
@@ -379,6 +421,10 @@ export class SessionSidebar {
 
   #confirmArchivedDeletion(count) {
     const message = `Delete ${count} archived session${count === 1 ? "" : "s"} permanently? This cannot be undone.`;
+    return this.#confirmDialog({ message, ariaLabel: "Delete archived sessions" });
+  }
+
+  #confirmDialog({ message, ariaLabel }) {
     return new Promise((resolve) => {
       const overlay = document.createElement("div");
       overlay.className = "sidebar-confirm-overlay";
@@ -386,7 +432,7 @@ export class SessionSidebar {
       dialog.className = "sidebar-confirm-dialog";
       dialog.setAttribute("role", "dialog");
       dialog.setAttribute("aria-modal", "true");
-      dialog.setAttribute("aria-label", "Delete archived sessions");
+      dialog.setAttribute("aria-label", ariaLabel);
       const msgEl = document.createElement("div");
       msgEl.className = "sidebar-confirm-message";
       msgEl.textContent = message;
@@ -404,20 +450,18 @@ export class SessionSidebar {
       actions.append(noBtn, yesBtn);
       dialog.appendChild(actions);
       overlay.appendChild(dialog);
-      function onKeyDown(event) {
-        if (event.key === "Escape") cleanup(false);
-      }
+      let unbindEscape = () => {};
       function cleanup(result) {
-        document.removeEventListener("keydown", onKeyDown);
+        unbindEscape();
         overlay.remove();
         resolve(result);
       }
+      unbindEscape = bindDialogEscape(() => cleanup(false));
       overlay.addEventListener("click", (event) => {
         if (event.target === overlay) cleanup(false);
       });
       overlay.querySelector(".sidebar-confirm-no").addEventListener("click", () => cleanup(false));
       overlay.querySelector(".sidebar-confirm-yes").addEventListener("click", () => cleanup(true));
-      document.addEventListener("keydown", onKeyDown);
       document.body.appendChild(overlay);
     });
   }
@@ -1299,6 +1343,11 @@ export class SessionSidebar {
           }
           this.render();
         },
+      },
+      { separator: true },
+      {
+        label: t("sidebar.deleteWorkspaceSessions"),
+        action: () => this.deleteWorkspaceSessions(project),
       },
     ];
     this.#showMenu(event, rows);

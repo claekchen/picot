@@ -1254,7 +1254,8 @@ fn messages_from_entries_response(response: &Value) -> Value {
 }
 
 fn message_with_entry_id(mut message: Value, entry_id: Option<&str>) -> Value {
-    if message.get("role").and_then(Value::as_str) != Some("user") {
+    let role = message.get("role").and_then(Value::as_str);
+    if role != Some("user") && role != Some("assistant") {
         return message;
     }
     let Some(entry_id) = entry_id else {
@@ -1471,9 +1472,13 @@ async fn dispatch(
                     .get("path")
                     .and_then(Value::as_str)
                     .unwrap_or_default();
+                let show_hidden = frame
+                    .get("showHidden")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
                 let entries = state
                     .data
-                    .list_files(workspace_id, relative_path)
+                    .list_files(workspace_id, relative_path, show_hidden)
                     .map_err(host_data_error)?;
                 Ok(json!({
                     "type": "data_response",
@@ -1589,6 +1594,26 @@ async fn dispatch(
                     "messages": messages,
                 }))
             }
+            Some("read_session_tree") => {
+                let workspace_id = frame
+                    .get("workspaceId")
+                    .and_then(Value::as_str)
+                    .ok_or(("invalid_workspace", "workspaceId is required".into()))?;
+                let session_id = frame
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .ok_or(("invalid_session", "sessionId is required".into()))?;
+                let tree = state
+                    .data
+                    .read_session_tree(workspace_id, session_id)
+                    .map_err(host_data_error)?;
+                Ok(json!({
+                    "type": "data_response",
+                    "requestId": request_id,
+                    "operation": "read_session_tree",
+                    "tree": tree,
+                }))
+            }
             Some("workspace_info") => {
                 let workspace_id = frame
                     .get("workspaceId")
@@ -1636,6 +1661,32 @@ async fn dispatch_host_operation(
                 "requestId": request_id,
                 "operation": "list_pi_packages",
                 "packages": packages,
+            }))
+        }
+        "check_pi_package_updates" => {
+            let workspace_root = frame
+                .get("workspaceId")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .and_then(|id| state.data.workspace_root_path(id).ok());
+            let resolver = state.pi_launch.clone();
+            let packages = tokio::task::spawn_blocking(move || resolver.list_pi_packages())
+                .await
+                .map_err(|error| ("host_operation_failed", error.to_string()))?
+                .map_err(|message| ("list_pi_packages_failed", message))?;
+            // npm probes run with the workspace as cwd so project-local npmCommand
+            // settings and .npmrc files are honored; failures degrade to no updates.
+            let updates = crate::package_updates::check_available_updates(
+                &packages,
+                workspace_root.as_deref(),
+            )
+            .await;
+            Ok(json!({
+                "type": "host_response",
+                "requestId": request_id,
+                "operation": "check_pi_package_updates",
+                "updates": updates,
             }))
         }
         "install_pi_package" | "remove_pi_package" | "update_pi_package" => {
@@ -2603,7 +2654,7 @@ mod tests {
     }
 
     #[test]
-    fn derives_active_branch_messages_with_user_entry_ids_from_entries() {
+    fn derives_active_branch_messages_with_user_and_assistant_entry_ids_from_entries() {
         let response = json!({
             "type": "response",
             "command": "get_entries",
@@ -2651,9 +2702,9 @@ mod tests {
             messages,
             json!([
                 { "role": "user", "content": "first", "entryId": "user-1" },
-                { "role": "assistant", "content": [{ "type": "text", "text": "old" }] },
+                { "role": "assistant", "content": [{ "type": "text", "text": "old" }], "entryId": "assistant-1" },
                 { "role": "user", "content": "current", "entryId": "user-2" },
-                { "role": "assistant", "content": [{ "type": "text", "text": "new" }] }
+                { "role": "assistant", "content": [{ "type": "text", "text": "new" }], "entryId": "assistant-2" }
             ])
         );
     }
