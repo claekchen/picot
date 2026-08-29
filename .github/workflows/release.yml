@@ -132,7 +132,31 @@ jobs:
       - name: Build pi extensions bundle
         run: bun run build:extensions
 
-      - name: Build Tauri app (Linux deb + rpm) and publish assets
+      # linuxdeploy walks the whole AppDir and runs `ldd` on every ELF file
+      # it finds, including the statically linked `pi` binary we ship under
+      # `resources/pi`. On arm64 glibc's ldd has no interpreter to trace for a
+      # static binary, falls back to executing the file, and dies -- which
+      # aborts the AppImage bundle. This shim calls the real ldd and, when it
+      # fails, degrades to the answer ldd should have given, so linuxdeploy
+      # treats the file as having no shared-library dependencies (which is
+      # true) instead of erroring out. Only affects the AppImage tooling; the
+      # deb/rpm bundlers never invoke ldd.
+      - name: Install ldd shim for linuxdeploy (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "$RUNNER_TEMP/ldd-shim"
+          cat > "$RUNNER_TEMP/ldd-shim/ldd" <<'SH'
+          #!/bin/sh
+          out=$(/usr/bin/ldd "$@") || {
+            printf '\tnot a dynamic executable\n'
+            exit 0
+          }
+          printf '%s\n' "$out"
+          SH
+          chmod +x "$RUNNER_TEMP/ldd-shim/ldd"
+          echo "$RUNNER_TEMP/ldd-shim" >> "$GITHUB_PATH"
+
+      - name: Build Tauri app (Linux deb + rpm + AppImage) and publish assets
         if: runner.os == 'Linux'
         uses: tauri-apps/tauri-action@v0
         env:
@@ -156,7 +180,11 @@ jobs:
             Download the installer for your platform from the assets below.
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-          args: --bundles deb,rpm
+          # AppImage is the only Linux target the Tauri updater supports, so
+          # it is what puts a `linux-*` entry into `latest.json`. It is also
+          # the only target that goes through linuxdeploy -- see the ldd shim
+          # step above and `NO_STRIP` for the workarounds that keeps alive.
+          args: --bundles deb,rpm,appimage
           # tauri-action will only attach `latest.json` (the updater
           # manifest) when this is `true`. Combined with
           # `bundle.createUpdaterArtifacts` in tauri.conf.json, the
