@@ -166,6 +166,50 @@ jobs:
           chmod +x "$RUNNER_TEMP/ldd-shim/ldd"
           echo "$RUNNER_TEMP/ldd-shim" >> "$GITHUB_PATH"
 
+      # linuxdeploy also runs `patchelf --set-rpath '$ORIGIN'` on every ELF in
+      # the AppDir, `resources/pi/pi` included. patchelf relocates the program
+      # headers, which shifts every PT_LOAD file offset -- measured on
+      # v0.4.3-beta.5: x86_64 +0x1000, aarch64 +0x10000, and a DT_RUNPATH the
+      # upstream binary does not have. `pi` is a self-extracting single-file
+      # runtime that seeks its payload at a fixed offset inside
+      # /proc/self/exe, so a shifted binary dies instantly and silently
+      # (killed by a signal, nothing on stderr). In the app that surfaces as
+      # "Pi RPC request failed: ProcessClosed" plus an empty provider list.
+      # deb/rpm never invoke linuxdeploy, which is why only AppImage users hit
+      # it, and the ldd shim above does not help: it stops dependency
+      # deployment, not the rpath rewrite.
+      #
+      # linuxdeploy looks up patchelf in $PATCHELF before falling back to PATH
+      # ("Using patchelf specified in $PATCHELF"), so point it at a shim that
+      # forwards everything except a *write* to the bundled pi. Reads still go
+      # through so linuxdeploy keeps getting truthful answers.
+      - name: Install patchelf shim for linuxdeploy (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf
+          mkdir -p "$RUNNER_TEMP/patchelf-shim"
+          cat > "$RUNNER_TEMP/patchelf-shim/patchelf" <<'SH'
+          #!/bin/sh
+          # patchelf's target file is always the final argument.
+          for arg in "$@"; do target="$arg"; done
+          case "$target" in
+            */pi/pi)
+              for arg in "$@"; do
+                case "$arg" in
+                  --set-rpath|--add-rpath|--force-rpath|--remove-rpath|--shrink-rpath|--set-interpreter|--add-needed|--remove-needed|--replace-needed)
+                    echo "picot: refusing to rewrite the embedded pi runtime ($target)" >&2
+                    exit 0
+                    ;;
+                esac
+              done
+              ;;
+          esac
+          exec /usr/bin/patchelf "$@"
+          SH
+          chmod +x "$RUNNER_TEMP/patchelf-shim/patchelf"
+          echo "PATCHELF=$RUNNER_TEMP/patchelf-shim/patchelf" >> "$GITHUB_ENV"
+
       - name: Build Tauri app (Linux deb + rpm + AppImage) and publish assets
         if: runner.os == 'Linux'
         uses: tauri-apps/tauri-action@v0
@@ -205,6 +249,33 @@ jobs:
           # bundle. The Tauri updater endpoint then resolves to
           # `https://github.com/.../releases/latest/download/latest.json`.
           updaterJsonPreferNsis: true
+
+      # Guard against the failure this shim exists to prevent: if a future
+      # linuxdeploy (or a change to the shim) rewrites the embedded runtime
+      # again, fail loudly here instead of shipping an AppImage whose pi dies
+      # at startup with no stderr.
+      - name: Verify linuxdeploy left the embedded pi untouched (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          appimage="$(ls "$PWD"/src-tauri/target/release/bundle/appimage/*.AppImage | head -1)"
+          expected="$(sha256sum "$PWD/src-tauri/resources/pi/pi" | cut -d' ' -f1)"
+          workdir="$RUNNER_TEMP/appimage-pi-check"
+          rm -rf "$workdir"
+          mkdir -p "$workdir"
+          chmod +x "$appimage"
+          (cd "$workdir" && "$appimage" --appimage-extract 'usr/lib/*/pi/pi' >/dev/null)
+          bundled="$(find "$workdir/squashfs-root" -type f -name pi | head -1)"
+          if [ -z "$bundled" ]; then
+            echo "::error::the AppImage does not contain resources/pi/pi"
+            exit 1
+          fi
+          actual="$(sha256sum "$bundled" | cut -d' ' -f1)"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::linuxdeploy modified the embedded pi runtime (expected $expected, got $actual)"
+            exit 1
+          fi
+          echo "embedded pi is byte-identical to upstream ($actual)"
 
       - name: Build Tauri app and publish assets
         if: runner.os != 'Linux'
