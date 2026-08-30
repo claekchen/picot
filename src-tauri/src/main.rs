@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod appimage_env;
 mod git_pi_runner;
 mod git_service;
 mod host_data;

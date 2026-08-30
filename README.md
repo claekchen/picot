@@ -41,6 +41,14 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/shixin-guo/picot/main/scripts/install.ps1 | iex
 ```
 
+The Linux installer picks a `.deb` or `.rpm` for your package manager. On distros with
+neither — or to install per-user without `sudo` — add `--appimage` to get the AppImage in
+`~/.local/bin`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/shixin-guo/picot/main/scripts/install.sh | bash -s -- --appimage
+```
+
 Or [download from GitHub Releases](https://github.com/shixin-guo/picot/releases).
 
 You **do not** need to install the `pi` CLI separately — Picot bundles its own pi runtime.

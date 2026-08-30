@@ -41,6 +41,13 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/shixin-guo/picot/main/scripts/install.ps1 | iex
 ```
 
+Linux 安装脚本会按你的包管理器选择 `.deb` 或 `.rpm`。两者都没有的发行版，或者不想用 `sudo`
+的话，加 `--appimage` 把 AppImage 装到 `~/.local/bin`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/shixin-guo/picot/main/scripts/install.sh | bash -s -- --appimage
+```
+
 或 [从 GitHub Releases 下载](https://github.com/shixin-guo/picot/releases)。
 
 **无需单独安装 `pi` CLI** — Picot 内置了自己的 pi 运行时。
