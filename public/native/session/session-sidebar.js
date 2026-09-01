@@ -73,6 +73,15 @@ function readArray(key) {
   }
 }
 
+function writeStorage(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Sidebar preferences are best-effort; storage quota/private-mode errors
+    // must not prevent the live UI interaction from completing.
+  }
+}
+
 function sessionCacheKey(workspaceId) {
   return `${STORAGE.sessionCache}:${workspaceId}`;
 }
@@ -285,7 +294,7 @@ export class SessionSidebar {
 
   // ── persistence ────────────────────────────────────────────────
   #save(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
+    writeStorage(key, JSON.stringify(value));
   }
   isFavourite(id) {
     return this.favourites.includes(id);
@@ -933,7 +942,7 @@ export class SessionSidebar {
         expanded: !this.recentCollapsed,
         onToggle: (expanded) => {
           this.recentCollapsed = !expanded;
-          localStorage.setItem(STORAGE.recentCollapsed, String(this.recentCollapsed));
+          writeStorage(STORAGE.recentCollapsed, String(this.recentCollapsed));
         },
         renderSessions: (body) => {
           for (const session of recentSessions) {
@@ -975,7 +984,7 @@ export class SessionSidebar {
         expanded: !this.archivedCollapsed,
         onToggle: (expanded) => {
           this.archivedCollapsed = !expanded;
-          localStorage.setItem(STORAGE.archivedCollapsed, String(this.archivedCollapsed));
+          writeStorage(STORAGE.archivedCollapsed, String(this.archivedCollapsed));
         },
         renderSessions: (body) => {
           for (const s of archived) {
@@ -1211,7 +1220,7 @@ export class SessionSidebar {
     header.addEventListener("click", () => {
       const next = !this.#isProjectCollapsed(project);
       this.projectsCollapsed[project.path] = next;
-      localStorage.setItem(STORAGE.projectsCollapsed, JSON.stringify(this.projectsCollapsed));
+      writeStorage(STORAGE.projectsCollapsed, JSON.stringify(this.projectsCollapsed));
       header.classList.toggle("collapsed", next);
       list.classList.toggle("collapsed", next);
     });

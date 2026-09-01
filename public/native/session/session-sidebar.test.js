@@ -550,6 +550,37 @@ describe("SessionSidebar.render", () => {
     );
   });
 
+  it("still toggles a project when saving its collapsed state exceeds storage quota", async () => {
+    const { sidebar, container } = makeSidebar([
+      {
+        id: "s-other",
+        timestamp: new Date().toISOString(),
+        name: "Other",
+        projectPath: "/other",
+        projectName: "other",
+        isCurrentWorkspace: false,
+      },
+    ]);
+    await sidebar.load();
+
+    const originalSetItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (key, value) {
+      if (key === "picot-projects-collapsed") {
+        throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+      }
+      originalSetItem.call(this, key, value);
+    });
+
+    const project = container.querySelector(".project-group");
+    const header = project.querySelector(".project-header");
+    const sessions = project.querySelector(".project-sessions");
+    expect(sessions.classList.contains("collapsed")).toBe(true);
+
+    header.click();
+
+    expect(sessions.classList.contains("collapsed")).toBe(false);
+  });
+
   it("shows the current project new-chat button for LAN clients", async () => {
     delete globalThis.__TAURI__;
     const onCreateSession = vi.fn().mockResolvedValue(undefined);
