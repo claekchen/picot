@@ -312,8 +312,12 @@ export class SessionSidebar {
   // list. Bounded to MAX_RECENT_SESSIONS so the section stays scannable.
   // Called from setActive() so every navigation path (sidebar click, route
   // boot, external link) converges on one recording point.
+  // The Agent Inbox has its own permanent nav entry, so it never belongs in
+  // recents — skip it here and prune it in #resolveRecentSessions.
   #recordRecent(id) {
     if (!id) return;
+    const session = this.sessions.find((entry) => entry.id === id);
+    if (session && isSuperAgentProjectPath(session.projectPath)) return;
     const next = [id, ...this.recent.filter((existing) => existing !== id)].slice(
       0,
       MAX_RECENT_SESSIONS,
@@ -332,7 +336,12 @@ export class SessionSidebar {
     const byId = new Map(this.sessions.map((session) => [session.id, session]));
     const resolved = this.recent
       .map((id) => byId.get(id))
-      .filter((session) => session && !this.isArchived(session.id));
+      .filter(
+        (session) =>
+          session &&
+          !this.isArchived(session.id) &&
+          !isSuperAgentProjectPath(session.projectPath),
+      );
     const validIds = resolved.map((session) => session.id);
     if (JSON.stringify(validIds) !== JSON.stringify(this.recent)) {
       this.recent = validIds;

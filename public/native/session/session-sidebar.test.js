@@ -1038,6 +1038,36 @@ describe("SessionSidebar.pinned", () => {
     expect(sidebar.pinnedStore.isWorkspacePinned("/ghost-ws")).toBe(false);
   });
 
+  it("keeps the Agent Inbox out of the RECENT section", async () => {
+    setSuperAgentEnabled(true);
+    const { sidebar, container } = makeSidebar([
+      {
+        id: "agent-inbox",
+        filePath: "/sessions/agent-inbox.jsonl",
+        timestamp: new Date().toISOString(),
+        name: "Inbox",
+        projectPath: "/Users/me/.pi/agent/super-agent",
+        projectName: "super-agent",
+      },
+      {
+        id: "s-1",
+        filePath: "/sessions/s-1.jsonl",
+        timestamp: new Date().toISOString(),
+        name: "Hello",
+      },
+    ]);
+    await sidebar.load();
+    sidebar.setActive("agent-inbox");
+    sidebar.setActive("s-1");
+    await sidebar.load();
+    expect(sidebar.recent).toEqual(["s-1"]);
+    const recentGroup = container.querySelector(".recent-group");
+    const recentIds = Array.from(recentGroup.querySelectorAll(".session-item")).map(
+      (node) => node.dataset.sessionId,
+    );
+    expect(recentIds).toEqual(["s-1"]);
+  });
+
   it("renders the PINNED section between RECENT and PROJECTS", async () => {
     const { sidebar, container } = makeSidebar([
       {
