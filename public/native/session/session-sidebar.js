@@ -1090,12 +1090,23 @@ export class SessionSidebar {
         for (const pinned of pinnedGroups) {
           const ws = pinned.workspace;
           const workspaceId = ws?.path || `pinned-session:${pinned.sessions[0]?.id || ""}`;
+          const invoke = globalThis.__TAURI__?.core?.invoke ?? null;
+          const canCreateSession = Boolean(ws && !pinned.unavailable && invoke);
           const { group } = buildSidebarWorkspaceGroup({
             workspaceId,
             folderName: ws?.folderName || t("sidebar.unavailable"),
             workspacePath: ws?.path || "",
             sessionCount: pinned.sessions.length,
             expanded: true,
+            onNewChat: canCreateSession
+              ? () => {
+                  invoke("open_new_session_in_workspace", { projectPath: ws.path }).catch(
+                    (error) => {
+                      console.error("[Sidebar] Failed to start new chat:", error);
+                    },
+                  );
+                }
+              : null,
             onMoreActions: pinned.workspacePin
               ? (event) =>
                   this.#showProjectContextMenu(event, { path: ws.path, name: ws.folderName })

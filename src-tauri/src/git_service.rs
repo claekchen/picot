@@ -1456,6 +1456,12 @@ fn git_command(root: &Path, args: impl IntoIterator<Item = OsString>) -> Command
             Ok(())
         });
     }
+    // CREATE_NO_WINDOW: keep console-less GUI children from flashing a window.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
     command
 }
 fn git_os(root: &Path, args: &[OsString]) -> Result<Vec<u8>, String> {
