@@ -1,8 +1,13 @@
 const EMPTY_QUEUE = Object.freeze({ steering: Object.freeze([]), followUp: Object.freeze([]) });
 
-export function createSessionStore(target) {
+export function createSessionStore(target, { agentKind = "pi" } = {}) {
   return {
     target: { ...target },
+    // Which backend this session's runtime talks to: "pi" (the embedded
+    // agent, default) or an ACP agent id (e.g. "claude-code"). Set by
+    // switchSessionAgent(); an independent panel renders instead of the
+    // normal message list while this isn't "pi" — see acp/acp-panel.js.
+    agentKind,
     sequence: 0,
     snapshotRequired: false,
     lifecycle: "starting",

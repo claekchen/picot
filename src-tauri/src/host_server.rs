@@ -1,5 +1,7 @@
 #![cfg_attr(not(test), allow(dead_code))]
 
+use crate::acp_launch;
+use crate::acp_manager::AcpAgentManager;
 use crate::host_data::{HostDataError, HostDataPlane, WriteFileResult};
 use crate::host_git;
 use crate::host_router::{ClientKind, HostRouter, RoutedAction, PROTOCOL_VERSION};
@@ -97,6 +99,11 @@ fn fingerprint_static_dir(static_dir: &std::path::Path) -> String {
 struct HostState {
     router: Mutex<HostRouter>,
     runtimes: NativePiManager,
+    // External Agent Client Protocol agents (Claude Code today) spawned when a
+    // session's `#` picker selects something other than Pi. A session is
+    // owned by at most one of `runtimes`/`acp` at a time — see
+    // `switch_session_agent` and `target_owner`.
+    acp: AcpAgentManager,
     auth: Arc<Mutex<RemoteAuth>>,
     session_owners: Mutex<std::collections::HashMap<RuntimeTarget, String>>,
     data: HostDataPlane,
@@ -215,6 +222,7 @@ impl HostServer {
         let state = Arc::new(HostState {
             router: Mutex::new(HostRouter::new()),
             runtimes,
+            acp: AcpAgentManager::new(),
             auth,
             session_owners: Mutex::new(std::collections::HashMap::new()),
             data,
@@ -1046,6 +1054,7 @@ async fn handle_websocket(mut socket: WebSocket, state: Arc<HostState>, loopback
     }
 
     let mut runtime_events = state.runtimes.subscribe();
+    let mut acp_events = state.acp.subscribe();
     let mut terminal_events = state.terminal_events.subscribe();
     let mut git_events = state.git_events.subscribe();
     let mut subscriptions = HashSet::new();
@@ -1183,6 +1192,27 @@ async fn handle_websocket(mut socket: WebSocket, state: Arc<HostState>, loopback
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
             }
+            event = acp_events.recv() => {
+                match event {
+                    Ok(event) if subscriptions.contains(&event.target) => {
+                        if send_frame(runtime_event_frame(event)).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        let outgoing = structured_error(
+                            None,
+                            "event_sequence_gap",
+                            "ACP runtime events were missed; switch agents again to resync",
+                        );
+                        if send_frame(outgoing).is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
             event = terminal_events.recv() => {
                 match event {
                     Ok((owner, outgoing)) if owner == terminal_owner => {
@@ -1226,7 +1256,7 @@ const RUNTIME_INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15 * 6
 
 fn runtime_request_timeout(command: &Value) -> Duration {
     match command.get("type").and_then(Value::as_str) {
-        Some("prompt") => RUNTIME_INTERACTIVE_REQUEST_TIMEOUT,
+        Some("prompt") | Some("acp_prompt") => RUNTIME_INTERACTIVE_REQUEST_TIMEOUT,
         _ => RUNTIME_REQUEST_TIMEOUT,
     }
 }
@@ -1419,6 +1449,32 @@ async fn dispatch(
                 .get("command")
                 .cloned()
                 .ok_or(("invalid_command", "Runtime command is required".into()))?;
+            if state.acp.owns(&target) {
+                if command.get("type").and_then(Value::as_str) == Some("acp_permission_response") {
+                    state
+                        .acp
+                        .respond_permission(&target, command)
+                        .await
+                        .map_err(|message| ("acp_permission_response_failed", message))?;
+                    return Ok(json!({
+                        "type": "runtime_response",
+                        "requestId": request_id,
+                        "acceptance": "completed",
+                        "response": { "success": true },
+                    }));
+                }
+                let response = state
+                    .acp
+                    .request(&target, command.clone(), runtime_request_timeout(&command))
+                    .await
+                    .map_err(|message| ("runtime_request_failed", message))?;
+                return Ok(json!({
+                    "type": "runtime_response",
+                    "requestId": request_id,
+                    "acceptance": "accepted",
+                    "response": response,
+                }));
+            }
             if command.get("type").and_then(Value::as_str) == Some("extension_ui_response") {
                 let is_owner = state
                     .session_owners
@@ -2272,6 +2328,81 @@ async fn dispatch_host_operation(
                 "operation": "restart_runtime",
                 "instanceId": new_instance,
                 "ok": true,
+            }))
+        }
+        "switch_session_agent" => {
+            let workspace_id = frame
+                .get("workspaceId")
+                .and_then(Value::as_str)
+                .ok_or(("invalid_workspace", "workspaceId is required".into()))?
+                .to_owned();
+            let session_id = frame
+                .get("sessionId")
+                .and_then(Value::as_str)
+                .ok_or(("invalid_session", "sessionId is required".into()))?
+                .to_owned();
+            let agent_id = frame
+                .get("agentId")
+                .and_then(Value::as_str)
+                .ok_or(("invalid_agent", "agentId is required".into()))?
+                .to_owned();
+
+            // A session is owned by at most one backend at a time — stop
+            // whichever one currently has it before spawning the new one.
+            if let Some(existing) = state
+                .runtimes
+                .target_for_session(&workspace_id, &session_id)
+            {
+                let _ = state.runtimes.stop(&existing);
+            }
+            if let Some(existing) = state.acp.target_for_session(&workspace_id, &session_id) {
+                let _ = state.acp.stop(&existing);
+            }
+
+            let cwd = state.data.workspace_root_path(&workspace_id).map_err(|_| {
+                (
+                    "workspace_not_found",
+                    "Could not resolve workspace root".into(),
+                )
+            })?;
+            let new_instance_id = format!("instance-{}", uuid::Uuid::new_v4().simple());
+            let target =
+                RuntimeTarget::new(workspace_id.clone(), session_id.clone(), new_instance_id);
+
+            if agent_id == "pi" {
+                let session_path = state
+                    .data
+                    .resolve_session_path(&workspace_id, &session_id)
+                    .ok()
+                    .flatten();
+                let cwd_str = cwd.to_string_lossy().to_string();
+                let session_path_str = session_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string());
+                let spec = state
+                    .pi_launch
+                    .native_launch_spec(&cwd_str, session_path_str.as_deref())
+                    .map_err(|message| ("launch_spec_failed", message))?;
+                state
+                    .runtimes
+                    .spawn(target.clone(), spec)
+                    .map_err(|message| ("switch_session_agent_failed", message))?;
+            } else {
+                let spec = acp_launch::resolve_preset(&agent_id, cwd)
+                    .map_err(|message| ("unknown_acp_agent", message))?;
+                state
+                    .acp
+                    .spawn(target.clone(), spec)
+                    .await
+                    .map_err(|message| ("switch_session_agent_failed", message))?;
+            }
+
+            Ok(json!({
+                "type": "host_response",
+                "requestId": request_id,
+                "operation": "switch_session_agent",
+                "target": target,
+                "agentId": agent_id,
             }))
         }
         _ => Err((

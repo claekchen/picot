@@ -25,6 +25,8 @@ import {
 } from "../ui/process-group.js";
 import { setupResizablePanel } from "../ui/resizable-panel.js";
 import { ToolCardRenderer } from "../ui/tool-card.js";
+import { setupAcpPanel } from "./acp/acp-panel.js";
+import { setupComposerAgentMenu } from "./composer/composer-agent-menu.js";
 import { setupComposerAutoResize } from "./composer/composer-autoresize.js";
 import { setupComposerImageAttachments } from "./composer/composer-images.js";
 import { setupComposerPasteOffload } from "./composer/composer-paste-offload.js";
@@ -268,6 +270,7 @@ let store = createSessionStore(target);
 let navigationGeneration = 0;
 let commandCatalog = buildCommandCatalog({});
 let streamingElement = null;
+let streamingStartedAt = null;
 let liveProcessGroup = null;
 let lastShownProviderError = null;
 let sidebar = null;
@@ -364,6 +367,50 @@ const customUiPanel = new CustomUiPanel({
   runtime,
   getTarget: () => target,
   onError: showError,
+});
+// Available `#`-picker agents. Codex/Cursor are follow-up presets (see
+// acp_launch.rs); adding one here plus a matching Rust preset is enough to
+// surface it.
+const ACP_AGENTS = [
+  { id: "pi", label: "Pi", description: "Picot's built-in agent" },
+  { id: "claude-code", label: "Claude Code", description: "External agent via ACP" },
+];
+const acpPanel = setupAcpPanel({
+  container: document.getElementById("acp-panel"),
+  messagesElement,
+  onRespondPermission: (requestId, optionId) => {
+    runtime
+      .request({ type: "acp_permission_response", requestId, optionId }, target, {
+        idempotencyKey: randomId(),
+      })
+      .catch(showError);
+  },
+});
+async function switchAgent(agentId) {
+  if (agentId === store.agentKind) return;
+  try {
+    const nextTarget = await control.switchSessionAgent(
+      target.workspaceId,
+      target.sessionId,
+      agentId,
+    );
+    await adoptTarget(nextTarget, { agentKind: agentId });
+    acpPanel.reset();
+    if (agentId === "pi") {
+      acpPanel.hide();
+      hydrateSnapshotOnce().catch(showError);
+    } else {
+      acpPanel.show();
+    }
+  } catch (error) {
+    showError(error);
+  }
+}
+setupComposerAgentMenu({
+  input,
+  container: document.getElementById("agent-picker-menu"),
+  getAgents: () => ACP_AGENTS,
+  onSelect: (agent) => switchAgent(agent.id),
 });
 // Remembers which extension commands rely on terminal-only `ctx.ui` surfaces,
 // so the slash menu can badge them instead of leaving the user with a command
@@ -1835,6 +1882,23 @@ async function sendComposerInput({ altKey }) {
   const value = input.value;
   const images = imageAttachments.getImages();
   if (!value.trim() && images.length === 0) return;
+  if (store.agentKind !== "pi") {
+    input.value = "";
+    input.scrollTop = 0;
+    composerAutoResize.sync();
+    imageAttachments.clear();
+    try {
+      await runtime.request({ type: "acp_prompt", message: value, images }, target, {
+        idempotencyKey: randomId(),
+      });
+    } catch (error) {
+      input.value = value;
+      composerAutoResize.sync();
+      imageAttachments.setImages(images);
+      throw error;
+    }
+    return;
+  }
   const intent = resolveComposerInput(value, commandCatalog, {
     working: store.lifecycle === "working",
     altKey,
@@ -1892,6 +1956,11 @@ function mountTurnFileChips() {
 
 async function handleRuntimeEvent(event) {
   switch (event.type) {
+    case "acp_session_update":
+    case "acp_permission_request":
+    case "acp_error":
+      acpPanel.apply(event);
+      break;
     case "agent_start":
       lastShownProviderError = null;
       setStatus("working");
@@ -1933,12 +2002,14 @@ async function handleRuntimeEvent(event) {
         upsertActiveSessionFromUserMessage(event.message);
       } else if (event.message?.role === "assistant") {
         showLiveProcessIndicator();
+        streamingStartedAt = Date.now();
         streamingElement = messageRenderer.renderAssistantMessage(event.message, true);
       }
       break;
     case "message_update":
       if (!streamingElement) {
         showLiveProcessIndicator();
+        streamingStartedAt = Date.now();
         streamingElement = messageRenderer.renderAssistantMessage(event.message, true);
       } else {
         messageRenderer.updateStreamingMessage(streamingElement, event.message?.content ?? []);
@@ -1947,12 +2018,19 @@ async function handleRuntimeEvent(event) {
     case "message_end":
       if (event.message?.role === "assistant") {
         if (streamingElement) {
+          const durationMs = streamingStartedAt != null ? Date.now() - streamingStartedAt : null;
           messageRenderer.updateStreamingMessage(streamingElement, event.message.content ?? []);
-          messageRenderer.finalizeStreamingMessage(streamingElement, event.message.usage ?? null);
+          messageRenderer.finalizeStreamingMessage(
+            streamingElement,
+            event.message.usage ?? null,
+            "",
+            durationMs,
+          );
           contextUsage.setUsage(event.message.usage ?? null, currentModelContextWindow);
           setSessionCost(sessionTotalCost + (event.message.usage?.cost?.total ?? 0));
           headerStatusBar?.applyLiveUsage?.(event.message.usage ?? null);
           streamingElement = null;
+          streamingStartedAt = null;
           convNav.notifyNewMessage();
         }
         showProviderErrorIfNeeded(event);
@@ -2018,7 +2096,7 @@ function upsertActiveSessionFromUserMessage(message = null) {
   pendingBoundSessionFirstMessage = null;
 }
 
-async function adoptTarget(nextTarget, { updateRoute = true } = {}) {
+async function adoptTarget(nextTarget, { updateRoute = true, agentKind = "pi" } = {}) {
   const previousTarget = target;
   const sessionChanged = nextTarget.sessionId !== previousTarget.sessionId;
   const targetChanged =
@@ -2036,7 +2114,7 @@ async function adoptTarget(nextTarget, { updateRoute = true } = {}) {
     );
   }
   target = nextTarget;
-  store = createSessionStore(target);
+  store = createSessionStore(target, { agentKind });
   // Reset the in-flight guard whenever the target changes so a new session
   // is never blocked from hydrating by a stale flag from the previous one.
   snapshotInFlight = false;
@@ -2048,6 +2126,7 @@ async function adoptTarget(nextTarget, { updateRoute = true } = {}) {
   customUiPanel.close({ notifyExtension: false });
   filePreviewFollow.clear();
   streamingElement = null;
+  streamingStartedAt = null;
   liveProcessGroup = null;
   adapter.subscribeTarget(target);
   sidebar?.setActive(target.sessionId);

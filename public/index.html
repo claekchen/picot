@@ -729,6 +729,10 @@
               id="super-agent-chat-header"
             ></sa-chat-header>
 
+            <!-- External ACP agent turn panel (Claude Code, ...) — shown instead of
+                 #messages while the active session's agent isn't Pi. -->
+            <div class="acp-panel hidden" id="acp-panel"></div>
+
             <!-- Messages Container -->
             <div class="messages" id="messages">
               <div class="welcome">
@@ -823,6 +827,10 @@
                   <div
                     class="skill-slash-menu hidden"
                     id="skill-slash-menu"
+                  ></div>
+                  <div
+                    class="skill-slash-menu hidden"
+                    id="agent-picker-menu"
                   ></div>
                   <div
                     class="at-file-mention-menu hidden"
@@ -1607,6 +1615,13 @@
           data-i18n="settings.remoteAccess"
         >
           Remote Access
+        </button>
+        <button
+          class="settings-nav-item"
+          data-settings-tab="ssh-remote"
+          data-i18n="settings.sshRemote"
+        >
+          SSH Remote
         </button>
         <button
           class="settings-nav-item"
@@ -2439,6 +2454,11 @@
           </div>
         </div>
 
+        <ssh-remote-settings-panel
+          class="settings-tab"
+          data-settings-panel="ssh-remote"
+        ></ssh-remote-settings-panel>
+
         <chat-settings-panel
           class="settings-tab"
           data-settings-panel="chat"
@@ -2594,6 +2614,7 @@
     <script type="module" src="components/super-agent-entry.js"></script>
     <script type="module" src="components/super-agent-runtime.js"></script>
     <script type="module" src="components/sa-chat-header.js"></script>
+    <script type="module" src="components/ssh-remote-settings-panel.js"></script>
     <script type="module" src="components/chat-settings-panel.js"></script>
   </body>
 </html>

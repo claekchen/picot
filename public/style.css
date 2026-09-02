@@ -39,10 +39,12 @@
 @import url("native/sidebar.css");
 @import url("native/header.css");
 @import url("native/messages.css");
+@import url("native/acp/acp-panel.css");
 @import url("native/composer.css");
 @import url("native/settings/package-browse.css");
 @import url("native/settings/skills-page.css");
 @import url("components/chat-settings-panel.css");
+@import url("components/ssh-remote-settings-panel.css");
 @import url("native/settings/settings-panel.css");
 @import url("native/settings/remote-access.css");
 @import url("native/settings/settings-config.css");

@@ -78,6 +78,20 @@ export class HostControlGateway {
     return frame?.instanceId ?? null;
   }
 
+  // Switches a session's backend between Pi and an external ACP agent
+  // (agentId: "pi" | "claude-code" | ...). Stops whichever runtime currently
+  // owns the session and spawns the requested one, returning the fresh
+  // {workspaceId, sessionId, instanceId} target to resubscribe with.
+  async switchSessionAgent(workspaceId, sessionId, agentId) {
+    const frame = await this.#request("switch_session_agent", {
+      workspaceId,
+      sessionId,
+      agentId,
+    });
+    if (!frame?.target) throw new Error("Host returned no target for the switched agent");
+    return frame.target;
+  }
+
   async resolveWorkspace(projectPath) {
     const frame = await this.#request("resolve_workspace", { projectPath });
     if (!frame?.workspaceId) throw new Error("Host returned an invalid workspace id");

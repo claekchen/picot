@@ -168,7 +168,8 @@
     "processToolCall": "{count} 次工具调用",
     "processToolCalls": "{count} 次工具调用",
     "providerError": "模型请求失败。",
-    "turnFiles": "本轮修改的文件（{count}）："
+    "turnFiles": "本轮修改的文件（{count}）：",
+    "responseTime": "响应耗时"
   },
   "tools": {
     "copyOutput": "复制输出",
@@ -626,6 +627,7 @@
     "remoteAccessQrAlt": "Picot 启动器二维码",
     "remoteAccessNote": "此 QR 仅打开 /app 启动器 URL，不会授权设备。本地访问使用 http://<LAN-IP>:57620/app；通信未加密，因此提示词和源代码可能在网络中被观察到。",
     "remoteAccessUnavailable": "本地网络启动器 URL 不可用。",
+    "sshRemote": "SSH 远程执行",
     "agentInbox": "智能体收件箱",
     "backToChat": "返回聊天",
     "appearance": "外观",
@@ -1193,6 +1195,33 @@
     "chooseProjectBeforeApproval": "批准前请先选择项目。",
     "loadingProjects": "正在加载项目…",
     "projectRunning": "{name} · 运行中"
+  },
+  "sshRemote": {
+    "title": "SSH 远程执行",
+    "description": "通过 SSH 在远程主机上运行此项目的读取、写入、编辑和 bash 工具调用,而不是在本地运行。",
+    "untrustedNotice": "请先信任此项目才能配置 SSH 远程执行。",
+    "enableLabel": "启用 SSH 远程执行",
+    "enableSub": "仅对此项目生效,从下一次会话开始应用",
+    "hostLabel": "主机",
+    "hostPlaceholder": "192.168.1.50 或 my-server.example.com",
+    "portLabel": "端口",
+    "portPlaceholder": "22",
+    "userLabel": "用户名",
+    "userPlaceholder": "ubuntu",
+    "remotePathLabel": "远程路径",
+    "remotePathPlaceholder": "留空则自动检测",
+    "identityFileLabel": "密钥文件",
+    "identityFilePlaceholder": "~/.ssh/id_ed25519",
+    "requirementsNote": "需要基于密钥的 SSH 认证(无密码提示),且远程主机需安装 bash。",
+    "save": "保存",
+    "testConnection": "测试连接",
+    "testing": "正在测试连接…",
+    "testOk": "已连接 — 远程路径:{path}",
+    "testFailed": "连接失败:{message}",
+    "saved": "已保存。",
+    "saveFailed": "保存失败:{message}",
+    "loadFailed": "加载 SSH 远程设置失败。",
+    "hostRequired": "主机不能为空。"
   },
   "remoteApproval": {
     "title": "远程访问请求",

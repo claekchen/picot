@@ -90,6 +90,25 @@ export function formatMessageTime(timestampMs) {
   return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${hhmm}`;
 }
 
+/**
+ * Format a response duration (ms) for the message footer, e.g. "3.2s" or
+ * "1m 05s". Picot times generation client-side (message_start → message_end);
+ * pi's runtime events carry no duration field of their own. Returns "" for
+ * missing/invalid input so callers can render unconditionally.
+ */
+export function formatDurationLabel(durationMs) {
+  // null / undefined must short-circuit before Number(): Number(null) === 0
+  // is a finite value and would otherwise render a fake "0.0s" duration.
+  if (durationMs == null) return "";
+  const ms = Number(durationMs);
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  const totalSeconds = ms / 1000;
+  if (totalSeconds < 60) return `${totalSeconds.toFixed(1)}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.round(totalSeconds % 60);
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
 /** Full timestamp for the hover `title` (screen-reader / exact reference). */
 function fullTimestampTitle(timestampMs) {
   const ms = Number(timestampMs);
@@ -467,7 +486,7 @@ export class MessageRenderer {
     return { text, thinking };
   }
 
-  finalizeStreamingMessage(messageElement, usage = null, thinking = "") {
+  finalizeStreamingMessage(messageElement, usage = null, thinking = "", durationMs = null) {
     const contentDiv = messageElement.querySelector(".message-content");
     let finalThinking = "";
     if (contentDiv) {
@@ -510,6 +529,9 @@ export class MessageRenderer {
 
       const timeSpan = this._createTimeSpan(Date.now());
       if (timeSpan) footer.appendChild(timeSpan);
+
+      const durationSpan = this._createDurationSpan(durationMs);
+      if (durationSpan) footer.appendChild(durationSpan);
 
       if (hasUsage) {
         const span = document.createElement("span");
@@ -622,6 +644,17 @@ export class MessageRenderer {
     span.textContent = label;
     const title = fullTimestampTitle(timestampMs);
     if (title) span.title = title;
+    return span;
+  }
+
+  /** Response-time span for the assistant footer; null when there's no duration to show. */
+  _createDurationSpan(durationMs) {
+    const label = formatDurationLabel(durationMs);
+    if (!label) return null;
+    const span = document.createElement("span");
+    span.className = "message-duration";
+    span.textContent = label;
+    span.title = t("messages.responseTime");
     return span;
   }
 

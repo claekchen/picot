@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod acp_launch;
+mod acp_manager;
 mod appimage_env;
 mod git_pi_runner;
 mod git_service;

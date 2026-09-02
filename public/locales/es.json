@@ -168,7 +168,8 @@
     "processToolCall": "{count} llamada a herramienta",
     "processToolCalls": "{count} llamadas a herramientas",
     "providerError": "La solicitud al modelo falló.",
-    "turnFiles": "Archivos modificados en este turno ({count}):"
+    "turnFiles": "Archivos modificados en este turno ({count}):",
+    "responseTime": "Tiempo de respuesta"
   },
   "tools": {
     "copyOutput": "Copiar salida",
@@ -626,6 +627,7 @@
     "remoteAccessQrAlt": "Código QR del lanzador de Picot",
     "remoteAccessNote": "Este QR solo abre la URL /app. No autoriza dispositivos. El acceso local usa http://<LAN-IP>:57620/app; el tráfico no está cifrado, por lo que los prompts y el código fuente podrían ser observables en la red.",
     "remoteAccessUnavailable": "La URL del lanzador de red local no está disponible.",
+    "sshRemote": "SSH remoto",
     "agentInbox": "Bandeja del agente",
     "backToChat": "Volver al chat",
     "appearance": "Apariencia",
@@ -1193,6 +1195,33 @@
     "chooseProjectBeforeApproval": "Elige un proyecto antes de aprobar.",
     "loadingProjects": "Cargando proyectos…",
     "projectRunning": "{name} · en ejecución"
+  },
+  "sshRemote": {
+    "title": "Ejecución remota por SSH",
+    "description": "Ejecuta las llamadas a herramientas read, write, edit y bash de este proyecto en un host remoto por SSH en lugar de localmente.",
+    "untrustedNotice": "Confía en este proyecto para configurar la ejecución remota por SSH.",
+    "enableLabel": "Activar ejecución remota por SSH",
+    "enableSub": "Se aplica solo a este proyecto, a partir de la próxima sesión",
+    "hostLabel": "Host",
+    "hostPlaceholder": "192.168.1.50 o my-server.example.com",
+    "portLabel": "Puerto",
+    "portPlaceholder": "22",
+    "userLabel": "Usuario",
+    "userPlaceholder": "ubuntu",
+    "remotePathLabel": "Ruta remota",
+    "remotePathPlaceholder": "Se detecta automáticamente si se deja vacío",
+    "identityFileLabel": "Archivo de identidad",
+    "identityFilePlaceholder": "~/.ssh/id_ed25519",
+    "requirementsNote": "Requiere autenticación SSH basada en clave (sin solicitud de contraseña) y bash en el host remoto.",
+    "save": "Guardar",
+    "testConnection": "Probar conexión",
+    "testing": "Probando conexión…",
+    "testOk": "Conectado — ruta remota: {path}",
+    "testFailed": "Error de conexión: {message}",
+    "saved": "Guardado.",
+    "saveFailed": "Error al guardar: {message}",
+    "loadFailed": "No se pudo cargar la configuración de SSH remoto.",
+    "hostRequired": "El host es obligatorio."
   },
   "remoteApproval": {
     "title": "Solicitud de acceso remoto",

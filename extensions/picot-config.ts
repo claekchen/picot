@@ -53,6 +53,12 @@ import {
   type SkillScope,
   type SkillTarget,
 } from "./skill-inventory";
+import {
+  assertSshRemoteSettingsValid,
+  parseSshRemoteSettings,
+  serializeSshRemoteSettings,
+  testSshRemoteConnection,
+} from "./ssh-remote";
 
 type ModelHealthStatus = "unknown" | "healthy" | "unhealthy";
 
@@ -1268,6 +1274,40 @@ export async function handlePicotConfig(
 
       case "set_default_auto_compaction":
         return { ok: true, data: setDefaultAutoCompaction(params.enabled, params.scope, ctx) };
+
+      // SSH Remote (Settings → SSH Remote): project-scoped only, since a
+      // remote host/path is tied to one workspace. Reads are unrestricted so
+      // an untrusted project's form still renders (with a "trust required"
+      // banner); writes require project trust like other project settings.
+      case "get_ssh_remote_config": {
+        const cwd = asString(ctx.cwd);
+        if (!cwd) throw new Error("Active workspace is required");
+        const settingsPath = path.join(cwd, PROJECT_CONFIG_DIR_NAME, "settings.json");
+        const settings = readSettingsObject(settingsPath);
+        return {
+          ok: true,
+          data: {
+            config: parseSshRemoteSettings(settings.sshRemote),
+            trusted: Boolean(ctx.isProjectTrusted?.()),
+            path: settingsPath,
+          },
+        };
+      }
+
+      case "set_ssh_remote_config": {
+        const config = parseSshRemoteSettings(params.config ?? params);
+        assertSshRemoteSettingsValid(config);
+        const target = resolveSettingsPath("project", ctx);
+        const settings = readSettingsObject(target.path);
+        settings.sshRemote = serializeSshRemoteSettings(config);
+        writeSettingsObject(target.path, settings);
+        return { ok: true, data: { config, path: target.path } };
+      }
+
+      case "test_ssh_remote_config": {
+        const config = parseSshRemoteSettings(params.config ?? params);
+        return { ok: true, data: await testSshRemoteConnection(config) };
+      }
 
       case "read_models_config":
         return { ok: true, data: readConfigFile(MODELS_CONFIG_PATH, '{\n  "providers": {}\n}\n') };

@@ -168,7 +168,8 @@
     "processToolCall": "{count} tool call",
     "processToolCalls": "{count} tool calls",
     "providerError": "The model request failed.",
-    "turnFiles": "Files changed this turn ({count}):"
+    "turnFiles": "Files changed this turn ({count}):",
+    "responseTime": "Response time"
   },
   "tools": {
     "copyOutput": "Copy output",
@@ -626,6 +627,7 @@
     "remoteAccessQrAlt": "QR code for the Picot launcher",
     "remoteAccessNote": "This QR only opens the plain /app launcher URL. It does not authorize a device. Local-network access uses http://<LAN-IP>:57620/app; traffic is unencrypted, so prompts and source may be observable on the network. Installed-PWA HTTPS requirements are not changed here.",
     "remoteAccessUnavailable": "The local-network launcher URL is unavailable.",
+    "sshRemote": "SSH Remote",
     "agentInbox": "Agent Inbox",
     "backToChat": "Back to chat",
     "appearance": "Appearance",
@@ -1193,6 +1195,33 @@
     "chooseProjectBeforeApproval": "Choose a project before approval.",
     "loadingProjects": "Loading projects…",
     "projectRunning": "{name} · running"
+  },
+  "sshRemote": {
+    "title": "SSH Remote Execution",
+    "description": "Run this project's read, write, edit, and bash tool calls on a remote host over SSH instead of locally.",
+    "untrustedNotice": "Trust this project to configure SSH remote execution.",
+    "enableLabel": "Enable SSH remote execution",
+    "enableSub": "Applies to this project only, starting with the next session",
+    "hostLabel": "Host",
+    "hostPlaceholder": "192.168.1.50 or my-server.example.com",
+    "portLabel": "Port",
+    "portPlaceholder": "22",
+    "userLabel": "Username",
+    "userPlaceholder": "ubuntu",
+    "remotePathLabel": "Remote path",
+    "remotePathPlaceholder": "Detected automatically if left blank",
+    "identityFileLabel": "Identity file",
+    "identityFilePlaceholder": "~/.ssh/id_ed25519",
+    "requirementsNote": "Requires key-based SSH authentication (no password prompts) and bash on the remote host.",
+    "save": "Save",
+    "testConnection": "Test Connection",
+    "testing": "Testing connection…",
+    "testOk": "Connected — remote path: {path}",
+    "testFailed": "Connection failed: {message}",
+    "saved": "Saved.",
+    "saveFailed": "Save failed: {message}",
+    "loadFailed": "Failed to load SSH remote settings.",
+    "hostRequired": "Host is required."
   },
   "remoteApproval": {
     "title": "Remote access request",

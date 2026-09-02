@@ -4,6 +4,7 @@ import { registerHostUiCapabilityReporter } from "./host-ui-capabilities";
 import { handlePicotConfig } from "./picot-config";
 import projectTrust from "./project-trust";
 import { registerAutomaticSessionTitle } from "./session-title-auto";
+import { readProjectSshRemoteSettings, registerSshRemoteExtension } from "./ssh-remote";
 
 type ConfigRequest = {
   id?: string;
@@ -20,6 +21,13 @@ export default function picotBridge(pi: ExtensionAPI) {
   // Surfaces the `ctx.ui` surfaces that stay terminal-only, so a command that
   // silently does nothing in the GUI can say why.
   registerHostUiCapabilityReporter(pi);
+  // Settings → SSH Remote: delegates read/write/edit/bash to a remote host
+  // when the trusted project's .pi/settings.json has sshRemote.enabled.
+  registerSshRemoteExtension(pi, (cwd, trusted) => {
+    if (!trusted) return null;
+    const settings = readProjectSshRemoteSettings(cwd);
+    return settings.enabled && settings.host ? settings : null;
+  });
 
   // Configuration data plane. Invoked by the WebView via a native RPC prompt
   // (`/picot-config <json>`); extension commands run immediately without

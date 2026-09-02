@@ -21,6 +21,10 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 vi.mock("./session-title", () => ({
   generateTitleForSession: vi.fn().mockResolvedValue("Generated title"),
 }));
+vi.mock("./ssh-remote", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./ssh-remote")>();
+  return { ...actual, testSshRemoteConnection: vi.fn() };
+});
 
 const tempHomes: string[] = [];
 
@@ -547,5 +551,143 @@ describe("picot config oauth operations", () => {
     // Rejected before any runtime is constructed — the op surface never
     // forwards a non-codex provider to runtime.logout().
     expect(ModelRuntime.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("picot config ssh remote operations", () => {
+  it("requires an active workspace to read config", async () => {
+    const { handlePicotConfig } = await loadConfigWithTempHome();
+    await expect(handlePicotConfig("get_ssh_remote_config", {}, {})).resolves.toEqual({
+      ok: false,
+      error: "Active workspace is required",
+    });
+  });
+
+  it("reads the project's sshRemote settings and reports trust state", async () => {
+    const { home, handlePicotConfig } = await loadConfigWithTempHome();
+    const workspace = join(home, "workspace");
+    mkdirSync(join(workspace, ".pi"), { recursive: true });
+    const settingsPath = join(workspace, ".pi", "settings.json");
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({ sshRemote: { enabled: true, host: "example.com" }, other: 1 }),
+      "utf8",
+    );
+
+    await expect(
+      handlePicotConfig(
+        "get_ssh_remote_config",
+        {},
+        { cwd: workspace, isProjectTrusted: () => false },
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      data: {
+        config: { enabled: true, host: "example.com" },
+        trusted: false,
+        path: settingsPath,
+      },
+    });
+  });
+
+  it("defaults to a disabled config when the project has no settings.json yet", async () => {
+    const { home, handlePicotConfig } = await loadConfigWithTempHome();
+    const workspace = join(home, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    await expect(
+      handlePicotConfig(
+        "get_ssh_remote_config",
+        {},
+        { cwd: workspace, isProjectTrusted: () => true },
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      data: {
+        config: { enabled: false, host: "" },
+        trusted: true,
+        path: join(workspace, ".pi", "settings.json"),
+      },
+    });
+  });
+
+  it("rejects writes to an untrusted project", async () => {
+    const { home, handlePicotConfig } = await loadConfigWithTempHome();
+    const workspace = join(home, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    await expect(
+      handlePicotConfig(
+        "set_ssh_remote_config",
+        { config: { enabled: true, host: "example.com" } },
+        { cwd: workspace, isProjectTrusted: () => false },
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      error: "Project settings cannot be changed until the workspace is trusted",
+    });
+  });
+
+  it("rejects enabling without a host", async () => {
+    const { home, handlePicotConfig } = await loadConfigWithTempHome();
+    const workspace = join(home, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    await expect(
+      handlePicotConfig(
+        "set_ssh_remote_config",
+        { config: { enabled: true, host: "" } },
+        { cwd: workspace, isProjectTrusted: () => true },
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      error: "Host is required when SSH remote execution is enabled",
+    });
+  });
+
+  it("writes sshRemote settings while preserving unrelated project settings", async () => {
+    const { home, handlePicotConfig } = await loadConfigWithTempHome();
+    const workspace = join(home, "workspace");
+    mkdirSync(join(workspace, ".pi"), { recursive: true });
+    const settingsPath = join(workspace, ".pi", "settings.json");
+    writeFileSync(settingsPath, JSON.stringify({ defaultThinkingLevel: "low" }), "utf8");
+
+    const result = await handlePicotConfig(
+      "set_ssh_remote_config",
+      { config: { enabled: true, host: "example.com", port: 2222 } },
+      { cwd: workspace, isProjectTrusted: () => true },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      data: { config: { enabled: true, host: "example.com", port: 2222 }, path: settingsPath },
+    });
+    expect(JSON.parse(readFileSync(settingsPath, "utf8"))).toEqual({
+      defaultThinkingLevel: "low",
+      sshRemote: { enabled: true, host: "example.com", port: 2222 },
+    });
+  });
+
+  it("delegates connection testing to testSshRemoteConnection", async () => {
+    const { handlePicotConfig } = await loadConfigWithTempHome();
+    const { testSshRemoteConnection } = await import("./ssh-remote");
+    vi.mocked(testSshRemoteConnection).mockResolvedValue({
+      ok: true,
+      message: "Connected",
+      remotePath: "/srv/app",
+      latencyMs: 12,
+    });
+
+    await expect(
+      handlePicotConfig(
+        "test_ssh_remote_config",
+        { config: { enabled: true, host: "example.com" } },
+        {},
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      data: { ok: true, message: "Connected", remotePath: "/srv/app", latencyMs: 12 },
+    });
+    expect(testSshRemoteConnection).toHaveBeenCalledWith({ enabled: true, host: "example.com" });
   });
 });
